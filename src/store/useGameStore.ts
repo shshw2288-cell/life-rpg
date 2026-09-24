@@ -18,6 +18,7 @@ import { applyExp } from '../engine/leveling'
 import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/pets'
 import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../engine/rewards'
 import { planSettlement } from '../engine/schedule'
+import { migrateSave } from '../services/migrations'
 import { addDays, diffDays, getGameDate } from '../lib/date'
 import { newId } from '../lib/id'
 import type { BattleState, PlayerAction } from '../types/battle'
@@ -70,6 +71,10 @@ interface GameStore extends GameState {
   buyTicket: (count?: number) => void
   /** 동행 펫 지정. null이면 해제 */
   setActivePet: (speciesId: string | null) => void
+  /** 백업 파일로 내보낼 현재 상태 */
+  exportSave: () => GameState
+  /** 백업에서 상태를 통째로 되돌린다 */
+  importSave: (state: GameState) => void
 }
 
 function initialState(): GameState {
@@ -606,6 +611,34 @@ export const useGameStore = create<GameStore>()(
         if (speciesId && !state.pets.some((pet) => pet.speciesId === speciesId)) return
         set({ activePetId: speciesId })
       },
+
+      exportSave: () => {
+        const state = get()
+        return {
+          schemaVersion: SCHEMA_VERSION,
+          character: state.character,
+          tasks: state.tasks,
+          events: state.events,
+          settlements: state.settlements,
+          eggs: state.eggs,
+          pets: state.pets,
+          activePetId: state.activePetId,
+          petTickets: state.petTickets,
+          materials: state.materials,
+          dungeonDay: state.dungeonDay,
+          towerKeys: state.towerKeys,
+          tower: state.tower,
+          battle: state.battle,
+          inventory: state.inventory,
+          ownedCosmetics: state.ownedCosmetics,
+          cosmetics: state.cosmetics,
+          meta: state.meta,
+        }
+      },
+
+      importSave: (state) => {
+        set({ ...state, feedback: [] })
+      },
     }),
     {
       name: 'life-rpg-save',
@@ -630,45 +663,8 @@ export const useGameStore = create<GameStore>()(
         cosmetics: state.cosmetics,
         meta: state.meta,
       }),
-      migrate: (persisted, version) => {
-        let state = persisted as Partial<GameState>
-
-        // v1 -> v2: 던전 필드 추가. 기존 과제·기록은 그대로 둔다.
-        if (version < 2) {
-          state = {
-            ...state,
-            materials: state.materials ?? {},
-            dungeonDay: state.dungeonDay ?? { date: getGameDate(new Date()), entriesUsed: 0 },
-            battle: state.battle ?? null,
-          }
-        }
-
-        // v2 -> v3: 펫 등급·뽑기 추가. 이미 모은 펫은 그대로 두고 첫 마리를 동행으로 지정한다.
-        if (version < 3) {
-          state = {
-            ...state,
-            petTickets: state.petTickets ?? GACHA.startingTickets,
-            activePetId: state.activePetId ?? state.pets?.[0]?.speciesId ?? null,
-          }
-        }
-
-        // v3 -> v4: 탑·상점 추가.
-        // 예전 전투는 몬스터 정보를 id로만 갖고 있어 층 구조로 복원할 수 없다.
-        // 진행 중이던 전투 한 판만 버리고 나머지 기록은 모두 지킨다.
-        if (version < 4) {
-          state = {
-            ...state,
-            towerKeys: state.towerKeys ?? 0,
-            tower: state.tower ?? { highestCleared: 0, lastFloor: 1 },
-            inventory: state.inventory ?? {},
-            ownedCosmetics: state.ownedCosmetics ?? [],
-            cosmetics: state.cosmetics ?? { hat: null, face: null, aura: null },
-            battle: null,
-          }
-        }
-
-        return { ...state, schemaVersion: SCHEMA_VERSION } as GameState
-      },
+      // 저장 형식 변환은 services/migrations.ts 한 곳에서만 한다 (가져오기도 같은 함수를 쓴다)
+      migrate: (persisted, version) => migrateSave(persisted as Partial<GameState>, version),
     },
   ),
 )
