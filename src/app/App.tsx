@@ -5,6 +5,7 @@ import { Sidebar } from '../components/layout/Sidebar'
 import { TopBar } from '../components/layout/TopBar'
 import { CharacterPage } from '../pages/CharacterPage'
 import { DashboardPage } from '../pages/DashboardPage'
+import { DungeonPage } from '../pages/DungeonPage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { PetsPage } from '../pages/PetsPage'
 import { SettingsPage } from '../pages/SettingsPage'
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/character" element={<CharacterPage />} />
+              <Route path="/dungeon" element={<DungeonPage />} />
               <Route path="/pets" element={<PetsPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />

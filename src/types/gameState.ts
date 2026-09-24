@@ -1,4 +1,5 @@
 import type { GameDate } from '../lib/date'
+import type { BattleState, DungeonDay } from './battle'
 import type { Egg, Pet } from './pet'
 import type { Task, TaskEvent } from './task'
 
@@ -28,6 +29,12 @@ export interface GameState {
   settlements: DailySettlement[]
   eggs: Egg[]
   pets: Pet[]
+  /** 던전 보상으로 얻는 제작 재료. 재료 id -> 개수 */
+  materials: Record<string, number>
+  /** 오늘의 던전 입장 현황 */
+  dungeonDay: DungeonDay
+  /** 진행 중이거나 방금 끝난 전투. 없으면 null */
+  battle: BattleState | null
   meta: {
     /** 정산을 마친 마지막 게임 날짜 */
     lastSettledDate: GameDate
@@ -36,4 +43,5 @@ export interface GameState {
   }
 }
 
-export const SCHEMA_VERSION = 1
+/** 2: 던전(materials, dungeonDay, battle) 추가 */
+export const SCHEMA_VERSION = 2

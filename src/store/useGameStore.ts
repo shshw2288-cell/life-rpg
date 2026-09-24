@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { MATERIALS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS, DEATH_PENALTY, HISTORY_RETENTION_DAYS } from '../data/gameConfig'
+import { MONSTERS, findMonster } from '../data/monsterConfig'
+import { calcRewards, createBattle, deriveCombatStats, takeTurn } from '../engine/combat'
+import { countCompletionsOn, entryStatus, rollOverDay } from '../engine/dungeon'
 import { countHabitEvents } from '../engine/ledger'
 import { applyExp } from '../engine/leveling'
 import { progressPets } from '../engine/pets'
@@ -8,6 +12,7 @@ import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../
 import { planSettlement } from '../engine/schedule'
 import { addDays, diffDays, getGameDate } from '../lib/date'
 import { newId } from '../lib/id'
+import type { PlayerAction } from '../types/battle'
 import type { Character, DailySettlement, GameState } from '../types/gameState'
 import { SCHEMA_VERSION } from '../types/gameState'
 import type { Egg, Pet } from '../types/pet'
@@ -38,6 +43,12 @@ interface GameStore extends GameState {
   runSettlement: () => void
   dismissFeedback: (id: string) => void
   resetAll: () => void
+  /** 던전 입장. 남은 입장 횟수가 없으면 아무 일도 하지 않는다. */
+  enterDungeon: (monsterId?: string) => void
+  /** 전투 중 행동 한 번 */
+  battleAction: (action: PlayerAction) => void
+  /** 결과 화면을 닫고 던전 입구로 돌아간다 */
+  leaveBattle: () => void
 }
 
 function initialState(): GameState {
@@ -57,6 +68,9 @@ function initialState(): GameState {
     settlements: [],
     eggs: [],
     pets: [],
+    materials: {},
+    dungeonDay: { date: today, entriesUsed: 0 },
+    battle: null,
     meta: {
       // 어제까지 정산된 것으로 보아 가입 이전 날짜에는 피해를 주지 않는다.
       lastSettledDate: addDays(today, -1),
@@ -352,6 +366,83 @@ export const useGameStore = create<GameStore>()(
       },
 
       resetAll: () => set({ ...initialState(), feedback: [] }),
+
+      enterDungeon: (monsterId) => {
+        const state = get()
+        // 이미 진행 중인 전투가 있으면 새로 시작하지 않는다 (입장권 낭비 방지)
+        if (state.battle && state.battle.status === 'active') return
+
+        const today = getGameDate(new Date())
+        const day = rollOverDay(state.dungeonDay, today)
+        const status = entryStatus({
+          today,
+          day,
+          completionsToday: countCompletionsOn(state.events, today),
+        })
+        if (status.remaining <= 0) return
+
+        const monster = findMonster(monsterId ?? MONSTERS[0].id) ?? MONSTERS[0]
+        const stats = deriveCombatStats(state.character.level)
+
+        set({
+          // 입장할 때 횟수를 먼저 차감한다. 새로고침으로 되돌릴 수 없다.
+          dungeonDay: { date: today, entriesUsed: day.entriesUsed + 1 },
+          battle: createBattle({ id: newId(), monster, stats, startedOn: today }),
+        })
+      },
+
+      battleAction: (action) => {
+        const state = get()
+        const battle = state.battle
+        if (!battle || battle.status !== 'active') return
+
+        const result = takeTurn(battle, action, Math.random)
+        if (result.battle === battle) return // MP 부족 등으로 아무 일도 일어나지 않음
+
+        let next = result.battle
+        const patch: Partial<GameStore> = {}
+        const feedback: FeedbackItem[] = []
+
+        // 승리 보상은 여기서 딱 한 번만 지급한다.
+        // rewardGranted 플래그가 저장되므로 새로고침·연타로 다시 받을 수 없다.
+        if (next.status === 'won' && !next.rewardGranted) {
+          const monster = findMonster(next.monsterId)
+          if (monster) {
+            const rewards = calcRewards(monster, Math.random)
+            const materials = { ...state.materials }
+            for (const [id, amount] of Object.entries(rewards.materials)) {
+              materials[id] = (materials[id] ?? 0) + amount
+            }
+
+            next = { ...next, rewardGranted: true, rewards }
+            patch.materials = materials
+            patch.character = { ...state.character, gold: state.character.gold + rewards.gold }
+
+            const materialText = Object.entries(rewards.materials)
+              .map(([id, amount]) => `${MATERIALS[id]?.name ?? id} x${amount}`)
+              .join(', ')
+            feedback.push({
+              id: newId(),
+              kind: 'reward',
+              title: `${monster.name} 처치!`,
+              detail: `+${rewards.gold} Gold${materialText ? ` · ${materialText}` : ''}`,
+            })
+          }
+        }
+
+        if (next.status === 'lost') {
+          feedback.push({
+            id: newId(),
+            kind: 'penalty',
+            title: '던전에서 패배했습니다',
+            detail: '생활 HP와 과제 기록에는 영향이 없습니다.',
+          })
+        }
+
+        set({ ...patch, battle: next, feedback: [...state.feedback, ...feedback] })
+      },
+
+      leaveBattle: () => set({ battle: null }),
     }),
     {
       name: 'life-rpg-save',
@@ -364,12 +455,24 @@ export const useGameStore = create<GameStore>()(
         settlements: state.settlements,
         eggs: state.eggs,
         pets: state.pets,
+        materials: state.materials,
+        dungeonDay: state.dungeonDay,
+        battle: state.battle,
         meta: state.meta,
       }),
       migrate: (persisted, version) => {
-        // 저장 형식이 바뀌면 여기서 단계별로 변환한다.
-        if (version < SCHEMA_VERSION) return persisted as GameState
-        return persisted as GameState
+        const state = persisted as Partial<GameState>
+        // v1 -> v2: 던전 관련 필드가 없던 저장 데이터를 채운다. 기존 과제·기록은 그대로 둔다.
+        if (version < 2) {
+          return {
+            ...state,
+            materials: state.materials ?? {},
+            dungeonDay: state.dungeonDay ?? { date: getGameDate(new Date()), entriesUsed: 0 },
+            battle: state.battle ?? null,
+            schemaVersion: SCHEMA_VERSION,
+          } as GameState
+        }
+        return state as GameState
       },
     },
   ),
