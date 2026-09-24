@@ -9,7 +9,7 @@ import { formatDisplayDate, getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
 
 export function DashboardPage() {
-  const { tasks, events, character, eggs, completeTask, recordHabit } = useGameStore()
+  const { tasks, events, character, eggs, cosmetics, completeTask, recordHabit } = useGameStore()
   const today = getGameDate(new Date())
 
   const active = tasks.filter((task) => !task.archivedAt)
@@ -85,7 +85,12 @@ export function DashboardPage() {
         <aside className="flex flex-col gap-4">
           <Panel title="내 루미">
             <Link to="/character" className="flex flex-col items-center gap-2">
-              <LumiAvatar stage={stage} size={150} fainted={character.hp <= character.maxHp * 0.2} />
+              <LumiAvatar
+                stage={stage}
+                size={150}
+                fainted={character.hp <= character.maxHp * 0.2}
+                cosmetics={cosmetics}
+              />
               <p className="text-sm font-semibold text-slate-100">{stage.name}</p>
               <p className="text-xs text-slate-500">Lv.{character.level} · 자세히 보기</p>
             </Link>

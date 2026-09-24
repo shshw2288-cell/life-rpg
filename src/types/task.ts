@@ -54,7 +54,8 @@ export type Task = HabitTask | DailyTask | TodoTask
 export interface TaskEvent {
   id: string
   taskId: string
-  action: 'complete' | 'habit_positive' | 'habit_negative' | 'miss_penalty'
+  /** study_round는 taskId 자리에 과목 id가 들어간다 */
+  action: 'complete' | 'habit_positive' | 'habit_negative' | 'miss_penalty' | 'study_round'
   localDate: GameDate
   timestamp: string
   expDelta: number

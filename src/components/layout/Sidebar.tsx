@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   ClipboardList,
   Egg,
   LayoutDashboard,
@@ -13,6 +14,7 @@ import { NavLink } from 'react-router-dom'
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/tasks', label: '과제 관리', icon: ClipboardList, end: false },
+  { to: '/study', label: '공부', icon: BookOpen, end: false },
   { to: '/character', label: '캐릭터', icon: Sparkles, end: false },
   { to: '/dungeon', label: '탑', icon: Swords, end: false },
   { to: '/shop', label: '상점', icon: Store, end: false },

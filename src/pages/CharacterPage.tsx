@@ -1,12 +1,19 @@
+import { Link } from 'react-router-dom'
 import { LumiAvatar } from '../components/character/LumiAvatar'
 import { PageShell, Panel } from '../components/layout/PageShell'
 import { EVOLUTION_STAGES } from '../data/evolutionConfig'
+import { COSMETICS, SLOT_LABEL, type CosmeticSlot } from '../data/shopConfig'
 import { levelsUntilNextStage, nextStage, stageForLevel } from '../engine/evolution'
 import { expForNextLevel } from '../engine/leveling'
 import { useGameStore } from '../store/useGameStore'
 
+const SLOTS: CosmeticSlot[] = ['hat', 'face', 'aura']
+
 export function CharacterPage() {
   const character = useGameStore((state) => state.character)
+  const cosmetics = useGameStore((state) => state.cosmetics)
+  const ownedCosmetics = useGameStore((state) => state.ownedCosmetics)
+  const equipCosmetic = useGameStore((state) => state.equipCosmetic)
   const current = stageForLevel(character.level)
   const upcoming = nextStage(character.level)
   const remaining = levelsUntilNextStage(character.level)
@@ -16,7 +23,12 @@ export function CharacterPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <Panel title="현재 모습">
           <div className="flex flex-col items-center gap-3">
-            <LumiAvatar stage={current} size={190} fainted={character.hp <= character.maxHp * 0.2} />
+            <LumiAvatar
+              stage={current}
+              size={190}
+              fainted={character.hp <= character.maxHp * 0.2}
+              cosmetics={cosmetics}
+            />
             <p className="text-lg font-bold text-slate-100">{current.name}</p>
             <p className="text-center text-sm text-slate-400">{current.description}</p>
 
@@ -50,6 +62,59 @@ export function CharacterPage() {
             </p>
           </div>
         </Panel>
+
+        <div className="lg:col-start-1">
+          <Panel title="꾸미기">
+            {ownedCosmetics.length === 0 ? (
+              <p className="text-sm text-slate-400">
+                아직 가진 꾸미기가 없습니다.{' '}
+                <Link to="/shop" className="text-ember-400 underline underline-offset-2">
+                  상점
+                </Link>
+                에서 살 수 있습니다.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {SLOTS.map((slot) => {
+                  const owned = COSMETICS.filter(
+                    (cosmetic) => cosmetic.slot === slot && ownedCosmetics.includes(cosmetic.id),
+                  )
+                  if (owned.length === 0) return null
+                  return (
+                    <div key={slot}>
+                      <p className="mb-1.5 text-xs text-slate-400">{SLOT_LABEL[slot]}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {owned.map((cosmetic) => {
+                          const equipped = cosmetics[slot] === cosmetic.id
+                          return (
+                            <button
+                              key={cosmetic.id}
+                              type="button"
+                              aria-pressed={equipped}
+                              onClick={() => equipCosmetic(slot, equipped ? null : cosmetic.id)}
+                              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                                equipped
+                                  ? 'border-ember-400 bg-abyss-700 font-semibold text-ember-400'
+                                  : 'border-abyss-700 text-slate-300 hover:bg-abyss-800'
+                              }`}
+                            >
+                              <span
+                                className="h-3 w-3 rounded-full"
+                                style={{ backgroundColor: cosmetic.style.primary }}
+                                aria-hidden
+                              />
+                              {cosmetic.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
 
         <Panel title="진화 단계">
           <ol className="space-y-3">

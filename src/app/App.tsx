@@ -10,6 +10,7 @@ import { HistoryPage } from '../pages/HistoryPage'
 import { PetsPage } from '../pages/PetsPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { ShopPage } from '../pages/ShopPage'
+import { StudyPage } from '../pages/StudyPage'
 import { TasksPage } from '../pages/TasksPage'
 import { useGameStore } from '../store/useGameStore'
 
@@ -33,6 +34,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/study" element={<StudyPage />} />
               <Route path="/character" element={<CharacterPage />} />
               <Route path="/dungeon" element={<DungeonPage />} />
               <Route path="/shop" element={<ShopPage />} />

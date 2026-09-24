@@ -18,13 +18,16 @@ import { applyExp } from '../engine/leveling'
 import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/pets'
 import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../engine/rewards'
 import { planSettlement } from '../engine/schedule'
+import { countRoundsOn, justReachedTarget, roundReward } from '../engine/study'
 import { migrateSave } from '../services/migrations'
+import { STUDY } from '../data/studyConfig'
 import { addDays, diffDays, getGameDate } from '../lib/date'
 import { newId } from '../lib/id'
 import type { BattleState, PlayerAction } from '../types/battle'
 import type { Character, DailySettlement, GameState } from '../types/gameState'
 import { SCHEMA_VERSION } from '../types/gameState'
 import type { Egg, Pet } from '../types/pet'
+import type { Subject } from '../types/study'
 import type { Task, TaskEvent } from '../types/task'
 
 /** 완료·기록 직후 화면에 보여줄 알림 */
@@ -41,6 +44,11 @@ export interface FeedbackItem {
  */
 type DraftOf<T> = T extends Task ? Omit<T, 'id' | 'createdAt' | 'updatedAt' | 'createdOn'> : never
 export type TaskDraft = DraftOf<Task>
+
+export type SubjectDraft = Omit<
+  Subject,
+  'id' | 'createdAt' | 'updatedAt' | 'createdOn' | 'rounds' | 'archivedAt'
+>
 
 interface GameStore extends GameState {
   feedback: FeedbackItem[]
@@ -71,6 +79,14 @@ interface GameStore extends GameState {
   buyTicket: (count?: number) => void
   /** 동행 펫 지정. null이면 해제 */
   setActivePet: (speciesId: string | null) => void
+  /** 공부 과목 추가 */
+  addSubject: (draft: SubjectDraft) => void
+  updateSubject: (id: string, patch: Partial<Subject>) => void
+  archiveSubject: (id: string) => void
+  /** 회독 1회 기록 (+버튼) */
+  addRound: (id: string) => void
+  /** 잘못 누른 회독 되돌리기. 회독 수만 줄이고 이미 받은 보상은 두 번 계산하지 않는다. */
+  undoRound: (id: string) => void
   /** 백업 파일로 내보낼 현재 상태 */
   exportSave: () => GameState
   /** 백업에서 상태를 통째로 되돌린다 */
@@ -90,6 +106,7 @@ function initialState(): GameState {
       gold: CHARACTER_DEFAULTS.gold,
     },
     tasks: [],
+    subjects: [],
     events: [],
     settlements: [],
     eggs: [],
@@ -612,12 +629,122 @@ export const useGameStore = create<GameStore>()(
         set({ activePetId: speciesId })
       },
 
+      addSubject: (draft) => {
+        const now = new Date()
+        const subject: Subject = {
+          ...draft,
+          id: newId(),
+          rounds: 0,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          createdOn: getGameDate(now),
+        }
+        set((state) => ({ subjects: [...state.subjects, subject] }))
+      },
+
+      updateSubject: (id, patch) => {
+        set((state) => ({
+          subjects: state.subjects.map((subject) =>
+            subject.id === id
+              ? { ...subject, ...patch, updatedAt: new Date().toISOString() }
+              : subject,
+          ),
+        }))
+      },
+
+      archiveSubject: (id) => {
+        set((state) => ({
+          subjects: state.subjects.map((subject) =>
+            subject.id === id ? { ...subject, archivedAt: new Date().toISOString() } : subject,
+          ),
+        }))
+      },
+
+      addRound: (id) => {
+        const state = get()
+        const subject = state.subjects.find((item) => item.id === id)
+        if (!subject) return
+
+        const now = new Date()
+        const today = getGameDate(now)
+        const todayCount = countRoundsOn(state.events, subject.id, today)
+        const reward = applyPetBonus(
+          roundReward(subject.difficulty, todayCount),
+          state.activePetId,
+        )
+
+        const rounds = subject.rounds + 1
+        const reachedTarget = justReachedTarget(rounds, subject.targetRounds)
+        const bonusGold = reachedTarget ? STUDY.targetBonusGold : 0
+
+        const event: TaskEvent = {
+          id: newId(),
+          taskId: subject.id,
+          action: 'study_round',
+          localDate: today,
+          timestamp: now.toISOString(),
+          expDelta: reward.exp,
+          goldDelta: reward.gold + bonusGold,
+          hpDelta: 0,
+          metricValue: rounds,
+          metricUnit: '회독',
+        }
+
+        const applied = applyDeltas(state.character, {
+          exp: reward.exp,
+          gold: reward.gold + bonusGold,
+          hp: 0,
+        })
+
+        set({
+          character: applied.character,
+          subjects: state.subjects.map((item) =>
+            item.id === id ? { ...item, rounds, updatedAt: now.toISOString() } : item,
+          ),
+          events: pruneEvents([...state.events, event], today),
+          feedback: [
+            ...state.feedback,
+            {
+              id: newId(),
+              kind: 'reward',
+              title: `${subject.name} ${rounds}회독`,
+              detail: `+${reward.exp} EXP · +${reward.gold + bonusGold} Gold${
+                todayCount > 0 ? ` (오늘 ${todayCount + 1}번째)` : ''
+              }`,
+            },
+            ...(reachedTarget
+              ? [
+                  {
+                    id: newId(),
+                    kind: 'levelup' as const,
+                    title: `${subject.name} 목표 달성!`,
+                    detail: `${subject.targetRounds}회독 완료 · 보너스 +${STUDY.targetBonusGold} Gold`,
+                  },
+                ]
+              : []),
+            ...applied.feedback,
+          ],
+          meta: { ...state.meta, updatedAt: now.toISOString() },
+        })
+      },
+
+      undoRound: (id) => {
+        set((state) => ({
+          subjects: state.subjects.map((subject) =>
+            subject.id === id && subject.rounds > 0
+              ? { ...subject, rounds: subject.rounds - 1, updatedAt: new Date().toISOString() }
+              : subject,
+          ),
+        }))
+      },
+
       exportSave: () => {
         const state = get()
         return {
           schemaVersion: SCHEMA_VERSION,
           character: state.character,
           tasks: state.tasks,
+          subjects: state.subjects,
           events: state.events,
           settlements: state.settlements,
           eggs: state.eggs,
@@ -647,6 +774,7 @@ export const useGameStore = create<GameStore>()(
         schemaVersion: state.schemaVersion,
         character: state.character,
         tasks: state.tasks,
+        subjects: state.subjects,
         events: state.events,
         settlements: state.settlements,
         eggs: state.eggs,

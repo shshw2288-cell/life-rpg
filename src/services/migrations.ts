@@ -44,6 +44,11 @@ export function migrateSave(input: Partial<GameState>, version: number): GameSta
     }
   }
 
+  // v4 -> v5: 공부 과목 추가. 기존 데이터는 건드리지 않는다.
+  if (version < 5) {
+    state = { ...state, subjects: state.subjects ?? [] }
+  }
+
   return withDefaults(state)
 }
 
@@ -62,6 +67,7 @@ export function withDefaults(state: Partial<GameState>): GameState {
       gold: state.character?.gold ?? CHARACTER_DEFAULTS.gold,
     },
     tasks: state.tasks ?? [],
+    subjects: state.subjects ?? [],
     events: state.events ?? [],
     settlements: state.settlements ?? [],
     eggs: state.eggs ?? [],
