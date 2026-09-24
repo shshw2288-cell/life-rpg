@@ -3,6 +3,14 @@ import type { GameDate } from '../lib/date'
 
 export type TaskType = 'habit' | 'daily' | 'todo'
 
+/** 운동처럼 수치를 남기고 싶은 과제에 붙인다. 완료할 때 값을 입력받는다. */
+export interface TaskMetric {
+  /** 단위. 예: '분', '회', 'km', '페이지' */
+  unit: string
+  /** 목표치 (선택) */
+  target?: number
+}
+
 interface TaskBase {
   id: string
   title: string
@@ -14,6 +22,8 @@ interface TaskBase {
   archivedAt?: string
   /** 생성된 게임 날짜. 이 날짜 이전은 정산 대상이 아니다. */
   createdOn: GameDate
+  /** 있으면 완료 시 수치를 입력받아 기록에 남긴다. */
+  metric?: TaskMetric
 }
 
 export interface HabitTask extends TaskBase {
@@ -50,4 +60,8 @@ export interface TaskEvent {
   expDelta: number
   goldDelta: number
   hpDelta: number
+  /** 운동 기록 등 수치 (과제에 metric이 있을 때만) */
+  metricValue?: number
+  /** 기록 당시의 단위. 과제를 나중에 수정해도 과거 기록이 흔들리지 않게 복사해둔다. */
+  metricUnit?: string
 }

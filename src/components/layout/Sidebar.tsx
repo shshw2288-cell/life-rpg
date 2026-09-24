@@ -1,9 +1,11 @@
-import { ClipboardList, LayoutDashboard, ScrollText, Settings } from 'lucide-react'
+import { ClipboardList, Egg, LayoutDashboard, ScrollText, Settings, Sparkles } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/tasks', label: '과제 관리', icon: ClipboardList, end: false },
+  { to: '/character', label: '캐릭터', icon: Sparkles, end: false },
+  { to: '/pets', label: '펫', icon: Egg, end: false },
   { to: '/history', label: '기록', icon: ScrollText, end: false },
   { to: '/settings', label: '설정', icon: Settings, end: false },
 ]

@@ -1,22 +1,14 @@
 import { Coins } from 'lucide-react'
-import { CHARACTER_DEFAULTS } from '../../data/gameConfig'
+import { stageForLevel } from '../../engine/evolution'
 import { expForNextLevel } from '../../engine/leveling'
 import { formatDisplayDate, getGameDate } from '../../lib/date'
+import { useGameStore } from '../../store/useGameStore'
 import { StatBar } from '../ui/StatBar'
 
-/**
- * 캐릭터 상태 표시줄.
- * 지금은 초기 상태를 그대로 보여주고, 저장소를 붙이는 단계에서 실제 상태와 연결한다.
- */
 export function TopBar() {
-  const character = {
-    level: CHARACTER_DEFAULTS.level,
-    exp: CHARACTER_DEFAULTS.exp,
-    hp: CHARACTER_DEFAULTS.maxHp,
-    maxHp: CHARACTER_DEFAULTS.maxHp,
-    gold: CHARACTER_DEFAULTS.gold,
-  }
+  const character = useGameStore((state) => state.character)
   const today = getGameDate(new Date())
+  const stage = stageForLevel(character.level)
 
   return (
     <header className="flex items-center justify-between gap-6 border-b border-abyss-700 bg-abyss-900 px-5 py-3">
@@ -24,6 +16,7 @@ export function TopBar() {
         <span className="rounded-md bg-abyss-700 px-2.5 py-1 text-sm font-bold text-ember-400">
           LV.{character.level}
         </span>
+        <span className="hidden text-xs text-slate-400 sm:inline">{stage.name}</span>
         <StatBar label="HP" current={character.hp} max={character.maxHp} tone="vital" />
         <StatBar
           label="EXP"
