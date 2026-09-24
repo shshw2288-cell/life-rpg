@@ -21,7 +21,12 @@ export interface FeedbackItem {
   detail?: string
 }
 
-export type TaskDraft = Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'createdOn'>
+/**
+ * 새 과제 입력값. 유니온 각 갈래에 따로 Omit을 적용해야
+ * repeatDays·polarity 같은 타입별 필드가 살아남는다.
+ */
+type DraftOf<T> = T extends Task ? Omit<T, 'id' | 'createdAt' | 'updatedAt' | 'createdOn'> : never
+export type TaskDraft = DraftOf<Task>
 
 interface GameStore extends GameState {
   feedback: FeedbackItem[]
