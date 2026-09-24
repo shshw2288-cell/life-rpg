@@ -2,9 +2,16 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { MATERIALS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS, DEATH_PENALTY, HISTORY_RETENTION_DAYS } from '../data/gameConfig'
-import { MONSTERS, findMonster } from '../data/monsterConfig'
 import { GACHA, GRADES } from '../data/petConfig'
-import { calcRewards, createBattle, deriveCombatStats, takeTurn } from '../engine/combat'
+import { findCosmetic, findItem, type CosmeticSlot } from '../data/shopConfig'
+import {
+  calcRewards,
+  createBattle,
+  deriveCombatStats,
+  takeTurn,
+  useItemTurn,
+} from '../engine/combat'
+import { canChallenge, firstClearBonus, monsterForFloor } from '../engine/tower'
 import { countCompletionsOn, entryStatus, rollOverDay } from '../engine/dungeon'
 import { countHabitEvents } from '../engine/ledger'
 import { applyExp } from '../engine/leveling'
@@ -13,7 +20,7 @@ import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../
 import { planSettlement } from '../engine/schedule'
 import { addDays, diffDays, getGameDate } from '../lib/date'
 import { newId } from '../lib/id'
-import type { PlayerAction } from '../types/battle'
+import type { BattleState, PlayerAction } from '../types/battle'
 import type { Character, DailySettlement, GameState } from '../types/gameState'
 import { SCHEMA_VERSION } from '../types/gameState'
 import type { Egg, Pet } from '../types/pet'
@@ -44,10 +51,17 @@ interface GameStore extends GameState {
   runSettlement: () => void
   dismissFeedback: (id: string) => void
   resetAll: () => void
-  /** 던전 입장. 남은 입장 횟수가 없으면 아무 일도 하지 않는다. */
-  enterDungeon: (monsterId?: string) => void
+  /** 탑 도전. 남은 입장 횟수가 없거나 잠긴 층이면 아무 일도 하지 않는다. */
+  enterDungeon: (floor?: number) => void
   /** 전투 중 행동 한 번 */
   battleAction: (action: PlayerAction) => void
+  /** 전투 중 아이템 사용 */
+  useBattleItem: (itemId: string) => void
+  /** 상점 구매 */
+  buyShopItem: (itemId: string, count?: number) => void
+  buyCosmetic: (cosmeticId: string) => void
+  /** 꾸미기 장착 / 해제 */
+  equipCosmetic: (slot: CosmeticSlot, cosmeticId: string | null) => void
   /** 결과 화면을 닫고 던전 입구로 돌아간다 */
   leaveBattle: () => void
   /** 펫 뽑기. 뽑기권이 모자라면 아무 일도 하지 않는다. */
@@ -79,7 +93,12 @@ function initialState(): GameState {
     petTickets: GACHA.startingTickets,
     materials: {},
     dungeonDay: { date: today, entriesUsed: 0 },
+    towerKeys: 0,
+    tower: { highestCleared: 0, lastFloor: 1 },
     battle: null,
+    inventory: {},
+    ownedCosmetics: [],
+    cosmetics: { hat: null, face: null, aura: null },
     meta: {
       // 어제까지 정산된 것으로 보아 가입 이전 날짜에는 피해를 주지 않는다.
       lastSettledDate: addDays(today, -1),
@@ -383,10 +402,13 @@ export const useGameStore = create<GameStore>()(
 
       resetAll: () => set({ ...initialState(), feedback: [] }),
 
-      enterDungeon: (monsterId) => {
+      enterDungeon: (floor) => {
         const state = get()
         // 이미 진행 중인 전투가 있으면 새로 시작하지 않는다 (입장권 낭비 방지)
         if (state.battle && state.battle.status === 'active') return
+
+        const target = floor ?? state.tower.highestCleared + 1
+        if (!canChallenge(target, state.tower.highestCleared)) return
 
         const today = getGameDate(new Date())
         const day = rollOverDay(state.dungeonDay, today)
@@ -395,15 +417,20 @@ export const useGameStore = create<GameStore>()(
           day,
           completionsToday: countCompletionsOn(state.events, today),
         })
-        if (status.remaining <= 0) return
 
-        const monster = findMonster(monsterId ?? MONSTERS[0].id) ?? MONSTERS[0]
+        // 하루 입장 횟수를 먼저 쓰고, 다 썼으면 상점에서 산 열쇠를 쓴다
+        const useKey = status.remaining <= 0
+        if (useKey && state.towerKeys <= 0) return
+
+        const monster = monsterForFloor(target)
         // 동행 펫의 전투 효과를 능력치에 더한다
         const stats = deriveCombatStats(state.character.level, petBonuses(state.activePetId).combat)
 
         set({
           // 입장할 때 횟수를 먼저 차감한다. 새로고침으로 되돌릴 수 없다.
-          dungeonDay: { date: today, entriesUsed: day.entriesUsed + 1 },
+          dungeonDay: useKey ? day : { date: today, entriesUsed: day.entriesUsed + 1 },
+          towerKeys: useKey ? state.towerKeys - 1 : state.towerKeys,
+          tower: { ...state.tower, lastFloor: target },
           battle: createBattle({ id: newId(), monster, stats, startedOn: today }),
         })
       },
@@ -413,50 +440,101 @@ export const useGameStore = create<GameStore>()(
         const battle = state.battle
         if (!battle || battle.status !== 'active') return
 
-        const result = takeTurn(battle, action, Math.random)
+        const result = takeTurn(battle, action, Math.random, {
+          reviveRatio: reviveRatioOf(state.inventory),
+        })
         if (result.battle === battle) return // MP 부족 등으로 아무 일도 일어나지 않음
 
-        let next = result.battle
-        const patch: Partial<GameStore> = {}
-        const feedback: FeedbackItem[] = []
+        set(resolveBattleResult(state, result.battle))
+      },
 
-        // 승리 보상은 여기서 딱 한 번만 지급한다.
-        // rewardGranted 플래그가 저장되므로 새로고침·연타로 다시 받을 수 없다.
-        if (next.status === 'won' && !next.rewardGranted) {
-          const monster = findMonster(next.monsterId)
-          if (monster) {
-            const rewards = calcRewards(monster, Math.random)
-            const materials = { ...state.materials }
-            for (const [id, amount] of Object.entries(rewards.materials)) {
-              materials[id] = (materials[id] ?? 0) + amount
-            }
+      useBattleItem: (itemId) => {
+        const state = get()
+        const battle = state.battle
+        if (!battle || battle.status !== 'active') return
 
-            next = { ...next, rewardGranted: true, rewards }
-            patch.materials = materials
-            patch.character = { ...state.character, gold: state.character.gold + rewards.gold }
+        const item = findItem(itemId)
+        if (!item || !item.usableInBattle) return
+        if ((state.inventory[itemId] ?? 0) <= 0) return
+        if (item.effect.kind !== 'heal' && item.effect.kind !== 'mana') return
 
-            const materialText = Object.entries(rewards.materials)
-              .map(([id, amount]) => `${MATERIALS[id]?.name ?? id} x${amount}`)
-              .join(', ')
-            feedback.push({
-              id: newId(),
-              kind: 'reward',
-              title: `${monster.name} 처치!`,
-              detail: `+${rewards.gold} Gold${materialText ? ` · ${materialText}` : ''}`,
-            })
+        const result = useItemTurn(
+          battle,
+          { kind: item.effect.kind, ratio: item.effect.ratio, name: item.name },
+          Math.random,
+          { reviveRatio: reviveRatioOf(state.inventory) },
+        )
+
+        const spent = { ...state.inventory, [itemId]: state.inventory[itemId] - 1 }
+        set({ ...resolveBattleResult({ ...state, inventory: spent }, result.battle), inventory: spent })
+      },
+
+      buyShopItem: (itemId, count = 1) => {
+        const state = get()
+        const item = findItem(itemId)
+        if (!item || count <= 0) return
+
+        const cost = item.price * count
+        if (state.character.gold < cost) return
+
+        const patch: Partial<GameStore> = {
+          character: { ...state.character, gold: state.character.gold - cost },
+        }
+
+        // 뽑기권과 탑의 열쇠는 각자의 칸으로 바로 들어간다
+        if (item.effect.kind === 'ticket') {
+          patch.petTickets = state.petTickets + count
+        } else if (item.effect.kind === 'entry') {
+          patch.towerKeys = state.towerKeys + count
+        } else {
+          patch.inventory = {
+            ...state.inventory,
+            [itemId]: (state.inventory[itemId] ?? 0) + count,
           }
         }
 
-        if (next.status === 'lost') {
-          feedback.push({
-            id: newId(),
-            kind: 'penalty',
-            title: '던전에서 패배했습니다',
-            detail: '생활 HP와 과제 기록에는 영향이 없습니다.',
-          })
-        }
+        set({
+          ...patch,
+          feedback: [
+            ...state.feedback,
+            {
+              id: newId(),
+              kind: 'reward',
+              title: `${item.name} 구매`,
+              detail: `-${cost} Gold${count > 1 ? ` · ${count}개` : ''}`,
+            },
+          ],
+        })
+      },
 
-        set({ ...patch, battle: next, feedback: [...state.feedback, ...feedback] })
+      buyCosmetic: (cosmeticId) => {
+        const state = get()
+        const cosmetic = findCosmetic(cosmeticId)
+        if (!cosmetic) return
+        if (state.ownedCosmetics.includes(cosmeticId)) return
+        if (state.character.gold < cosmetic.price) return
+
+        set({
+          character: { ...state.character, gold: state.character.gold - cosmetic.price },
+          ownedCosmetics: [...state.ownedCosmetics, cosmeticId],
+          // 산 즉시 장착해준다
+          cosmetics: { ...state.cosmetics, [cosmetic.slot]: cosmeticId },
+          feedback: [
+            ...state.feedback,
+            {
+              id: newId(),
+              kind: 'reward',
+              title: `${cosmetic.name} 구매`,
+              detail: `-${cosmetic.price} Gold · 바로 착용했습니다`,
+            },
+          ],
+        })
+      },
+
+      equipCosmetic: (slot, cosmeticId) => {
+        const state = get()
+        if (cosmeticId && !state.ownedCosmetics.includes(cosmeticId)) return
+        set({ cosmetics: { ...state.cosmetics, [slot]: cosmeticId } })
       },
 
       leaveBattle: () => set({ battle: null }),
@@ -544,7 +622,12 @@ export const useGameStore = create<GameStore>()(
         petTickets: state.petTickets,
         materials: state.materials,
         dungeonDay: state.dungeonDay,
+        towerKeys: state.towerKeys,
+        tower: state.tower,
         battle: state.battle,
+        inventory: state.inventory,
+        ownedCosmetics: state.ownedCosmetics,
+        cosmetics: state.cosmetics,
         meta: state.meta,
       }),
       migrate: (persisted, version) => {
@@ -569,11 +652,103 @@ export const useGameStore = create<GameStore>()(
           }
         }
 
+        // v3 -> v4: 탑·상점 추가.
+        // 예전 전투는 몬스터 정보를 id로만 갖고 있어 층 구조로 복원할 수 없다.
+        // 진행 중이던 전투 한 판만 버리고 나머지 기록은 모두 지킨다.
+        if (version < 4) {
+          state = {
+            ...state,
+            towerKeys: state.towerKeys ?? 0,
+            tower: state.tower ?? { highestCleared: 0, lastFloor: 1 },
+            inventory: state.inventory ?? {},
+            ownedCosmetics: state.ownedCosmetics ?? [],
+            cosmetics: state.cosmetics ?? { hat: null, face: null, aura: null },
+            battle: null,
+          }
+        }
+
         return { ...state, schemaVersion: SCHEMA_VERSION } as GameState
       },
     },
   ),
 )
+
+/** 부활의 부적을 가지고 있으면 회복 비율을, 없으면 null을 준다 */
+function reviveRatioOf(inventory: Record<string, number>): number | null {
+  if ((inventory.revive_charm ?? 0) <= 0) return null
+  const item = findItem('revive_charm')
+  return item && item.effect.kind === 'revive' ? item.effect.ratio : null
+}
+
+/**
+ * 전투 결과를 상태 변화로 바꾼다.
+ * 승리 보상은 rewardGranted가 false일 때 한 번만 지급하므로
+ * 새로고침이나 버튼 연타로 다시 받을 수 없다.
+ */
+function resolveBattleResult(state: GameStore, battle: BattleState): Partial<GameStore> {
+  let next = battle
+  const patch: Partial<GameStore> = {}
+  const feedback: FeedbackItem[] = []
+
+  // 부활의 부적이 이번 전투에서 쓰였으면 소모 처리
+  if (next.revivedOnce && !state.battle?.revivedOnce) {
+    patch.inventory = {
+      ...state.inventory,
+      revive_charm: Math.max(0, (state.inventory.revive_charm ?? 0) - 1),
+    }
+    feedback.push({
+      id: newId(),
+      kind: 'reward',
+      title: '부활의 부적 발동',
+      detail: '쓰러지지 않고 다시 일어섰습니다.',
+    })
+  }
+
+  if (next.status === 'won' && !next.rewardGranted) {
+    const monster = next.monsterDef
+    const base = calcRewards(monster, Math.random)
+    const bonus = firstClearBonus(next.floor, state.tower.highestCleared)
+    const gold = base.gold + bonus
+
+    const materials = { ...state.materials }
+    for (const [id, amount] of Object.entries(base.materials)) {
+      materials[id] = (materials[id] ?? 0) + amount
+    }
+
+    next = {
+      ...next,
+      rewardGranted: true,
+      rewards: { gold, materials: base.materials, firstClearBonus: bonus || undefined },
+    }
+    patch.materials = materials
+    patch.character = { ...state.character, gold: state.character.gold + gold }
+    patch.tower = {
+      highestCleared: Math.max(state.tower.highestCleared, next.floor),
+      lastFloor: next.floor,
+    }
+
+    const materialText = Object.entries(base.materials)
+      .map(([id, amount]) => `${MATERIALS[id]?.name ?? id} x${amount}`)
+      .join(', ')
+    feedback.push({
+      id: newId(),
+      kind: monster.isBoss ? 'levelup' : 'reward',
+      title: `${next.floor}층 ${monster.name} 처치!`,
+      detail: `+${gold} Gold${bonus ? ` (첫 격파 +${bonus})` : ''}${materialText ? ` · ${materialText}` : ''}`,
+    })
+  }
+
+  if (next.status === 'lost') {
+    feedback.push({
+      id: newId(),
+      kind: 'penalty',
+      title: `${next.floor}층에서 패배했습니다`,
+      detail: '생활 HP와 과제 기록에는 영향이 없습니다.',
+    })
+  }
+
+  return { ...patch, battle: next, feedback: [...state.feedback, ...feedback] }
+}
 
 /** 동행 펫의 EXP·Gold 효과를 보상에 적용한다 */
 function applyPetBonus(

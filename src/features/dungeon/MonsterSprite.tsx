@@ -1,7 +1,14 @@
-import type { MonsterDef } from '../../data/monsterConfig'
+/** 층 몬스터든 보스든 그리는 데 필요한 최소 정보만 받는다 */
+export interface SpriteMonster {
+  id: string
+  name: string
+  color: string
+  accent: string
+  isBoss?: boolean
+}
 
 interface MonsterSpriteProps {
-  monster: MonsterDef
+  monster: SpriteMonster
   size?: number
   /** 다음 턴에 강공격을 준비 중이면 표정이 바뀐다 */
   charging?: boolean
@@ -33,6 +40,14 @@ export function MonsterSprite({
       </defs>
 
       {charging && <circle cx="80" cy="92" r="66" fill="#f97316" opacity="0.18" />}
+      {monster.isBoss && !defeated && (
+        <>
+          <circle cx="80" cy="92" r="72" fill={monster.accent} opacity="0.18" />
+          {/* 보스는 뿔을 단다 */}
+          <path d="M 34 66 L 22 34 L 50 56 Z" fill={monster.accent} />
+          <path d="M 126 66 L 138 34 L 110 56 Z" fill={monster.accent} />
+        </>
+      )}
 
       {/* 몸통 */}
       <path

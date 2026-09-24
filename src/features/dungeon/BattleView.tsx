@@ -1,8 +1,8 @@
-import { Shield, Sparkles, Swords } from 'lucide-react'
+import { FlaskConical, Shield, Sparkles, Swords } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { LumiAvatar } from '../../components/character/LumiAvatar'
 import { ACTIONS, MATERIALS } from '../../data/battleConfig'
-import { findMonster } from '../../data/monsterConfig'
+import { SHOP_ITEMS } from '../../data/shopConfig'
 import { stageForLevel } from '../../engine/evolution'
 import { useGameStore } from '../../store/useGameStore'
 import type { BattleState } from '../../types/battle'
@@ -49,12 +49,19 @@ function Bar({
 
 export function BattleView({ battle }: { battle: BattleState }) {
   const level = useGameStore((state) => state.character.level)
+  const cosmetics = useGameStore((state) => state.cosmetics)
+  const inventory = useGameStore((state) => state.inventory)
   const battleAction = useGameStore((state) => state.battleAction)
+  const useBattleItem = useGameStore((state) => state.useBattleItem)
   const leaveBattle = useGameStore((state) => state.leaveBattle)
   const logRef = useRef<HTMLOListElement>(null)
 
-  const monster = findMonster(battle.monsterId)
+  const monster = battle.monsterDef
   const stage = stageForLevel(level)
+  const usableItems = SHOP_ITEMS.filter(
+    (item) => item.usableInBattle && (inventory[item.id] ?? 0) > 0,
+  )
+  const hasRevive = (inventory.revive_charm ?? 0) > 0
   const finished = battle.status !== 'active'
   const canUseSkill = battle.player.mp >= ACTIONS.skill.mpCost
 
@@ -68,9 +75,21 @@ export function BattleView({ battle }: { battle: BattleState }) {
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-abyss-700 bg-abyss-900 p-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="rounded-md bg-abyss-700 px-2.5 py-1 text-xs font-semibold text-slate-200">
-            {battle.turn}턴
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-abyss-700 px-2.5 py-1 text-xs font-semibold text-slate-200">
+              {battle.floor}층 · {battle.turn}턴
+            </span>
+            {monster.isBoss && (
+              <span className="rounded-md bg-ember-500/20 px-2 py-1 text-xs font-bold text-ember-400">
+                BOSS
+              </span>
+            )}
+            {hasRevive && (
+              <span className="rounded-md bg-abyss-800 px-2 py-1 text-[11px] text-emerald-400">
+                부활의 부적 대기 중
+              </span>
+            )}
+          </div>
           {battle.monsterCharging && !finished && (
             <span className="rounded-md bg-ember-500/20 px-2.5 py-1 text-xs text-ember-400">
               다음 턴 강공격 예고 — 방어를 고려하세요
@@ -80,7 +99,12 @@ export function BattleView({ battle }: { battle: BattleState }) {
 
         <div className="grid grid-cols-2 items-end gap-6">
           <div className="flex flex-col items-center gap-2">
-            <LumiAvatar stage={stage} size={132} fainted={battle.status === 'lost'} />
+            <LumiAvatar
+              stage={stage}
+              size={132}
+              fainted={battle.status === 'lost'}
+              cosmetics={cosmetics}
+            />
             <p className="text-sm font-semibold text-slate-100">{stage.name}</p>
             <div className="w-full space-y-2">
               <Bar label="전투 HP" current={battle.player.hp} max={battle.player.maxHp} tone="vital" />
@@ -123,6 +147,11 @@ export function BattleView({ battle }: { battle: BattleState }) {
               {battle.status === 'won' && battle.rewards && (
                 <ul className="text-sm text-slate-300">
                   <li>+{battle.rewards.gold} Gold</li>
+                  {battle.rewards.firstClearBonus && (
+                    <li className="text-ember-400">
+                      보스 첫 격파 보너스 포함 (+{battle.rewards.firstClearBonus})
+                    </li>
+                  )}
                   {Object.entries(battle.rewards.materials).map(([id, amount]) => (
                     <li key={id}>
                       {MATERIALS[id]?.name ?? id} x{amount}
@@ -165,6 +194,26 @@ export function BattleView({ battle }: { battle: BattleState }) {
                 disabled={!canUseSkill}
                 disabledHint="MP 부족"
               />
+            </div>
+          )}
+
+          {!finished && usableItems.length > 0 && (
+            <div className="mt-3 border-t border-abyss-700 pt-3">
+              <p className="mb-2 text-xs text-slate-400">아이템 (한 턴 소모)</p>
+              <div className="flex flex-wrap gap-2">
+                {usableItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => useBattleItem(item.id)}
+                    className="flex items-center gap-1.5 rounded-lg border border-abyss-700 bg-abyss-800 px-3 py-1.5 text-xs text-slate-200 hover:border-emerald-500 hover:bg-abyss-700"
+                  >
+                    <FlaskConical size={13} aria-hidden className="text-emerald-400" />
+                    {item.name}
+                    <span className="text-slate-500">x{inventory[item.id]}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ import { DungeonPage } from '../pages/DungeonPage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { PetsPage } from '../pages/PetsPage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { ShopPage } from '../pages/ShopPage'
 import { TasksPage } from '../pages/TasksPage'
 import { useGameStore } from '../store/useGameStore'
 
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/character" element={<CharacterPage />} />
               <Route path="/dungeon" element={<DungeonPage />} />
+              <Route path="/shop" element={<ShopPage />} />
               <Route path="/pets" element={<PetsPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />

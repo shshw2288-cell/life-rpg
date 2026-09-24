@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DIFFICULTY_TABLE } from '../data/gameConfig'
 import { GACHA, PET_SPECIES } from '../data/petConfig'
+import { findCosmetic, findItem } from '../data/shopConfig'
 import { getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
@@ -234,6 +235,140 @@ describe('던전', () => {
     useGameStore.getState().enterDungeon()
     expect(useGameStore.getState().battle).not.toBeNull()
     expect(useGameStore.getState().dungeonDay).toEqual({ date: today, entriesUsed: 1 })
+  })
+})
+
+describe('탑과 상점', () => {
+  /** 전투 능력치는 입장 시점에 정해지므로 레벨은 입장 전에 올려둬야 한다 */
+  function levelUpTo(level: number) {
+    useGameStore.setState({ character: { ...useGameStore.getState().character, level } })
+  }
+
+  function winCurrentBattle() {
+    for (let i = 0; i < 100; i += 1) {
+      const battle = useGameStore.getState().battle
+      if (!battle || battle.status !== 'active') return
+      useGameStore.getState().battleAction('attack')
+    }
+  }
+
+  it('처음에는 1층만 도전할 수 있다', () => {
+    useGameStore.getState().enterDungeon(2)
+    expect(useGameStore.getState().battle).toBeNull()
+
+    useGameStore.getState().enterDungeon(1)
+    expect(useGameStore.getState().battle?.floor).toBe(1)
+  })
+
+  it('이기면 다음 층이 열린다', () => {
+    levelUpTo(60)
+    useGameStore.getState().enterDungeon(1)
+    winCurrentBattle()
+    expect(useGameStore.getState().tower.highestCleared).toBe(1)
+    expect(useGameStore.getState().battle?.status).toBe('won')
+  })
+
+  it('보스 층은 첫 격파 보너스를 한 번만 준다', () => {
+    useGameStore.setState({
+      tower: { highestCleared: 9, lastFloor: 9 },
+      character: { ...useGameStore.getState().character, level: 60, gold: 0 },
+      towerKeys: 5,
+    })
+    useGameStore.getState().enterDungeon(10)
+    expect(useGameStore.getState().battle?.monsterDef.isBoss).toBe(true)
+    winCurrentBattle()
+
+    const firstRun = useGameStore.getState()
+    expect(firstRun.battle?.rewards?.firstClearBonus).toBeGreaterThan(0)
+    const goldAfterFirst = firstRun.character.gold
+
+    // 같은 보스를 다시 잡으면 보너스가 없다
+    useGameStore.getState().leaveBattle()
+    useGameStore.getState().enterDungeon(10)
+    winCurrentBattle()
+    expect(useGameStore.getState().battle?.rewards?.firstClearBonus).toBeUndefined()
+    expect(useGameStore.getState().character.gold).toBeGreaterThan(goldAfterFirst)
+  })
+
+  it('탑의 열쇠는 하루 제한을 넘어 입장하게 해준다', () => {
+    useGameStore.getState().enterDungeon(1) // 기본 1회 소진
+    useGameStore.getState().leaveBattle()
+    useGameStore.setState({ towerKeys: 1 })
+
+    useGameStore.getState().enterDungeon(1)
+    expect(useGameStore.getState().battle).not.toBeNull()
+    expect(useGameStore.getState().towerKeys).toBe(0)
+  })
+
+  it('상점에서 아이템을 사면 Gold가 줄고 인벤토리에 들어온다', () => {
+    const item = findItem('small_potion')!
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: item.price },
+    })
+    useGameStore.getState().buyShopItem('small_potion')
+    expect(useGameStore.getState().inventory.small_potion).toBe(1)
+    expect(useGameStore.getState().character.gold).toBe(0)
+  })
+
+  it('Gold가 모자라면 살 수 없다', () => {
+    useGameStore.setState({ character: { ...useGameStore.getState().character, gold: 0 } })
+    useGameStore.getState().buyShopItem('large_potion')
+    expect(useGameStore.getState().inventory.large_potion ?? 0).toBe(0)
+  })
+
+  it('탑의 열쇠와 뽑기권은 각자의 칸으로 들어간다', () => {
+    useGameStore.setState({ character: { ...useGameStore.getState().character, gold: 10000 } })
+    useGameStore.getState().buyShopItem('tower_key')
+    useGameStore.getState().buyShopItem('gacha_ticket')
+    expect(useGameStore.getState().towerKeys).toBe(1)
+    expect(useGameStore.getState().petTickets).toBe(GACHA.startingTickets + 1)
+  })
+
+  it('전투 중 물약을 쓰면 HP가 차고 개수가 줄어든다', () => {
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: 10000 },
+    })
+    useGameStore.getState().buyShopItem('large_potion')
+    useGameStore.getState().enterDungeon(1)
+
+    const battle = useGameStore.getState().battle!
+    useGameStore.setState({ battle: { ...battle, player: { ...battle.player, hp: 5 } } })
+
+    useGameStore.getState().useBattleItem('large_potion')
+    expect(useGameStore.getState().battle!.player.hp).toBeGreaterThan(5)
+    expect(useGameStore.getState().inventory.large_potion).toBe(0)
+  })
+
+  it('없는 아이템은 쓸 수 없다', () => {
+    useGameStore.getState().enterDungeon(1)
+    const before = useGameStore.getState().battle!.turn
+    useGameStore.getState().useBattleItem('small_potion')
+    expect(useGameStore.getState().battle!.turn).toBe(before)
+  })
+
+  it('꾸미기를 사면 바로 착용되고 Gold가 줄어든다', () => {
+    const cosmetic = findCosmetic('crown')!
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: cosmetic.price },
+    })
+    useGameStore.getState().buyCosmetic('crown')
+    expect(useGameStore.getState().ownedCosmetics).toContain('crown')
+    expect(useGameStore.getState().cosmetics.hat).toBe('crown')
+    expect(useGameStore.getState().character.gold).toBe(0)
+  })
+
+  it('가지지 않은 꾸미기는 장착할 수 없다', () => {
+    useGameStore.getState().equipCosmetic('hat', 'crown')
+    expect(useGameStore.getState().cosmetics.hat).toBeNull()
+  })
+
+  it('같은 꾸미기를 두 번 사지 않는다', () => {
+    useGameStore.setState({ character: { ...useGameStore.getState().character, gold: 10000 } })
+    useGameStore.getState().buyCosmetic('ribbon')
+    const goldAfter = useGameStore.getState().character.gold
+    useGameStore.getState().buyCosmetic('ribbon')
+    expect(useGameStore.getState().character.gold).toBe(goldAfter)
+    expect(useGameStore.getState().ownedCosmetics.filter((id) => id === 'ribbon')).toHaveLength(1)
   })
 })
 

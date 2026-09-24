@@ -1,5 +1,5 @@
 import type { GameDate } from '../lib/date'
-import type { BattleState, DungeonDay } from './battle'
+import type { BattleState, CosmeticLoadout, DungeonDay, TowerProgress } from './battle'
 import type { Egg, Pet } from './pet'
 import type { Task, TaskEvent } from './task'
 
@@ -37,8 +37,18 @@ export interface GameState {
   materials: Record<string, number>
   /** 오늘의 던전 입장 현황 */
   dungeonDay: DungeonDay
+  /** 상점에서 산 추가 입장권. 하루 제한과 별개로 쌓인다. */
+  towerKeys: number
+  /** 탑 진행 상황 */
+  tower: TowerProgress
   /** 진행 중이거나 방금 끝난 전투. 없으면 null */
   battle: BattleState | null
+  /** 소모품 보유 수. 아이템 id -> 개수 */
+  inventory: Record<string, number>
+  /** 구매한 꾸미기 아이템 */
+  ownedCosmetics: string[]
+  /** 장착 중인 꾸미기 */
+  cosmetics: CosmeticLoadout
   meta: {
     /** 정산을 마친 마지막 게임 날짜 */
     lastSettledDate: GameDate
@@ -47,5 +57,9 @@ export interface GameState {
   }
 }
 
-/** 2: 던전(materials, dungeonDay, battle) 추가 / 3: 펫 등급·뽑기(activePetId, petTickets) 추가 */
-export const SCHEMA_VERSION = 3
+/**
+ * 2: 던전(materials, dungeonDay, battle) 추가
+ * 3: 펫 등급·뽑기(activePetId, petTickets) 추가
+ * 4: 탑·상점(tower, towerKeys, inventory, cosmetics) 추가
+ */
+export const SCHEMA_VERSION = 4

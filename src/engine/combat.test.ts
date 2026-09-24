@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { ACTIONS, DUNGEON_ENTRY } from '../data/battleConfig'
-import { MONSTERS } from '../data/monsterConfig'
 import type { TaskEvent } from '../types/task'
 import { calcRewards, createBattle, deriveCombatStats, takeTurn } from './combat'
 import { countCompletionsOn, entryStatus, rollOverDay } from './dungeon'
+import { monsterForFloor } from './tower'
 
-const monster = MONSTERS[0]
+const monster = monsterForFloor(1)
 
 function battleAt(level: number) {
   return createBattle({

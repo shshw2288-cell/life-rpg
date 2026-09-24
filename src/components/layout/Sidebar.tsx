@@ -5,6 +5,7 @@ import {
   ScrollText,
   Settings,
   Sparkles,
+  Store,
   Swords,
 } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -13,7 +14,8 @@ const NAV_ITEMS = [
   { to: '/', label: '대시보드', icon: LayoutDashboard, end: true },
   { to: '/tasks', label: '과제 관리', icon: ClipboardList, end: false },
   { to: '/character', label: '캐릭터', icon: Sparkles, end: false },
-  { to: '/dungeon', label: '던전', icon: Swords, end: false },
+  { to: '/dungeon', label: '탑', icon: Swords, end: false },
+  { to: '/shop', label: '상점', icon: Store, end: false },
   { to: '/pets', label: '펫', icon: Egg, end: false },
   { to: '/history', label: '기록', icon: ScrollText, end: false },
   { to: '/settings', label: '설정', icon: Settings, end: false },

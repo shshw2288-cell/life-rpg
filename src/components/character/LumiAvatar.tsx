@@ -1,19 +1,31 @@
 import type { EvolutionStage } from '../../data/evolutionConfig'
+import type { CosmeticLoadout } from '../../types/battle'
+import { AuraLayer, FaceLayer, HatLayer, useCosmetics } from './CosmeticLayers'
+
+const NO_COSMETICS: CosmeticLoadout = { hat: null, face: null, aura: null }
 
 interface LumiAvatarProps {
   stage: EvolutionStage
   size?: number
   /** 쓰러진 상태면 표정이 바뀐다 */
   fainted?: boolean
+  /** 장착 중인 꾸미기 */
+  cosmetics?: CosmeticLoadout
 }
 
 /**
  * 캐릭터 '루미' 렌더링. 외부 이미지 없이 SVG로 직접 그린다.
  * 단계별 색·크기·더듬이 수·후광은 evolutionConfig에서 가져온다.
  */
-export function LumiAvatar({ stage, size = 160, fainted = false }: LumiAvatarProps) {
+export function LumiAvatar({
+  stage,
+  size = 160,
+  fainted = false,
+  cosmetics = NO_COSMETICS,
+}: LumiAvatarProps) {
   const { palette, form } = stage
   const s = form.scale
+  const worn = useCosmetics(cosmetics)
 
   return (
     <svg
@@ -36,6 +48,7 @@ export function LumiAvatar({ stage, size = 160, fainted = false }: LumiAvatarPro
       </defs>
 
       {form.aura && <circle cx="100" cy="104" r={78 * s} fill={`url(#aura-${stage.id})`} />}
+      {worn.aura && <AuraLayer cosmetic={worn.aura} />}
 
       {Array.from({ length: form.sparkles }).map((_, index) => {
         const angle = (index / form.sparkles) * Math.PI * 2
@@ -98,12 +111,15 @@ export function LumiAvatar({ stage, size = 160, fainted = false }: LumiAvatarPro
           </>
         )}
 
-        {form.blush && !fainted && (
+        {form.blush && !fainted && !worn.face && (
           <>
             <ellipse cx="68" cy="102" rx="7" ry="4.5" fill="#fb7185" opacity="0.45" />
             <ellipse cx="132" cy="102" rx="7" ry="4.5" fill="#fb7185" opacity="0.45" />
           </>
         )}
+
+        {worn.face && !fainted && <FaceLayer cosmetic={worn.face} />}
+        {worn.hat && <HatLayer cosmetic={worn.hat} />}
       </g>
     </svg>
   )
