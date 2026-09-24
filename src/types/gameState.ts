@@ -29,6 +29,10 @@ export interface GameState {
   settlements: DailySettlement[]
   eggs: Egg[]
   pets: Pet[]
+  /** 동행 펫의 종 id. 이 펫의 효과만 적용된다. */
+  activePetId: string | null
+  /** 펫 뽑기권 */
+  petTickets: number
   /** 던전 보상으로 얻는 제작 재료. 재료 id -> 개수 */
   materials: Record<string, number>
   /** 오늘의 던전 입장 현황 */
@@ -43,5 +47,5 @@ export interface GameState {
   }
 }
 
-/** 2: 던전(materials, dungeonDay, battle) 추가 */
-export const SCHEMA_VERSION = 2
+/** 2: 던전(materials, dungeonDay, battle) 추가 / 3: 펫 등급·뽑기(activePetId, petTickets) 추가 */
+export const SCHEMA_VERSION = 3

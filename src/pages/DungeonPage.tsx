@@ -4,18 +4,57 @@ import { DUNGEON_ENTRY, MATERIALS } from '../data/battleConfig'
 import { MONSTERS } from '../data/monsterConfig'
 import { deriveCombatStats } from '../engine/combat'
 import { countCompletionsOn, entryStatus } from '../engine/dungeon'
+import { petBonuses } from '../engine/pets'
+import { findSpecies } from '../data/petConfig'
 import { getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
 import { BattleView } from '../features/dungeon/BattleView'
 import { MonsterSprite } from '../features/dungeon/MonsterSprite'
 
+/** 펫 효과가 붙으면 증가분을 함께 보여준다 */
+function StatRow({
+  label,
+  value,
+  base,
+  tone,
+  suffix = '',
+}: {
+  label: string
+  value: number
+  base: number
+  tone: string
+  suffix?: string
+}) {
+  const diff = value - base
+  return (
+    <div className="flex justify-between">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className={`tabular-nums ${tone}`}>
+        {value}
+        {suffix}
+        {diff > 0 && (
+          <span className="ml-1 text-[11px] text-ember-400">
+            (+{diff}
+            {suffix})
+          </span>
+        )}
+      </dd>
+    </div>
+  )
+}
+
 export function DungeonPage() {
-  const { battle, dungeonDay, events, character, materials, enterDungeon } = useGameStore()
+  const { battle, dungeonDay, events, character, materials, activePetId, enterDungeon } =
+    useGameStore()
   const today = getGameDate(new Date())
 
   const completionsToday = countCompletionsOn(events, today)
   const entries = entryStatus({ today, day: dungeonDay, completionsToday })
-  const stats = deriveCombatStats(character.level)
+  // 동행 펫 효과를 포함한 값을 보여준다 (실제 입장 시 적용되는 값과 동일)
+  const bonus = petBonuses(activePetId)
+  const baseStats = deriveCombatStats(character.level)
+  const stats = deriveCombatStats(character.level, bonus.combat)
+  const activeSpecies = activePetId ? findSpecies(activePetId) : undefined
   const monster = MONSTERS[0]
 
   if (battle) {
@@ -108,32 +147,22 @@ export function DungeonPage() {
 
           <Panel title="전투 능력치">
             <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-400">전투 HP</dt>
-                <dd className="tabular-nums text-vital-400">{stats.maxHp}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">MP</dt>
-                <dd className="tabular-nums text-mana-400">{stats.maxMp}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">공격</dt>
-                <dd className="tabular-nums text-slate-200">{stats.attack}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">방어</dt>
-                <dd className="tabular-nums text-slate-200">{stats.defense}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">치명타</dt>
-                <dd className="tabular-nums text-slate-200">
-                  {Math.round(stats.critChance * 100)}%
-                </dd>
-              </div>
+              <StatRow label="전투 HP" value={stats.maxHp} base={baseStats.maxHp} tone="text-vital-400" />
+              <StatRow label="MP" value={stats.maxMp} base={baseStats.maxMp} tone="text-mana-400" />
+              <StatRow label="공격" value={stats.attack} base={baseStats.attack} tone="text-slate-200" />
+              <StatRow label="방어" value={stats.defense} base={baseStats.defense} tone="text-slate-200" />
+              <StatRow
+                label="치명타"
+                value={Math.round(stats.critChance * 100)}
+                base={Math.round(baseStats.critChance * 100)}
+                tone="text-slate-200"
+                suffix="%"
+              />
             </dl>
             <p className="mt-3 border-t border-abyss-700 pt-2 text-[11px] text-slate-500">
-              레벨 {character.level} 기준입니다. 전투 HP는 생활 HP와 별개이며, 전투에서 져도 과제
-              기록과 캐릭터 성장은 그대로 남습니다.
+              레벨 {character.level} 기준
+              {activeSpecies ? ` · 동행 펫 ${activeSpecies.name} 효과 포함` : ''}입니다. 전투 HP는
+              생활 HP와 별개이며, 전투에서 져도 과제 기록과 캐릭터 성장은 그대로 남습니다.
             </p>
           </Panel>
 

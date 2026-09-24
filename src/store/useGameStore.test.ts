@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DIFFICULTY_TABLE } from '../data/gameConfig'
+import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
@@ -233,6 +234,98 @@ describe('던전', () => {
     useGameStore.getState().enterDungeon()
     expect(useGameStore.getState().battle).not.toBeNull()
     expect(useGameStore.getState().dungeonDay).toEqual({ date: today, entriesUsed: 1 })
+  })
+})
+
+describe('펫 뽑기와 동행 효과', () => {
+  it('처음에 뽑기권 5장을 준다', () => {
+    expect(useGameStore.getState().petTickets).toBe(GACHA.startingTickets)
+  })
+
+  it('뽑으면 뽑기권이 줄고 펫이 늘어난다', () => {
+    const results = useGameStore.getState().drawPet(1)
+    expect(results).toHaveLength(1)
+    expect(useGameStore.getState().petTickets).toBe(GACHA.startingTickets - 1)
+    expect(useGameStore.getState().pets.length).toBeGreaterThan(0)
+  })
+
+  it('뽑기권이 모자라면 뽑히지 않는다', () => {
+    useGameStore.setState({ petTickets: 0 })
+    expect(useGameStore.getState().drawPet(1)).toEqual([])
+    expect(useGameStore.getState().pets).toHaveLength(0)
+  })
+
+  it('5연차는 뽑기권 5장을 쓴다', () => {
+    useGameStore.getState().drawPet(5)
+    expect(useGameStore.getState().petTickets).toBe(0)
+  })
+
+  it('첫 펫은 자동으로 동행이 된다', () => {
+    useGameStore.getState().drawPet(1)
+    const state = useGameStore.getState()
+    expect(state.activePetId).toBe(state.pets[0].speciesId)
+  })
+
+  it('보유하지 않은 펫은 동행으로 지정할 수 없다', () => {
+    useGameStore.getState().setActivePet('eclipse_dragon')
+    expect(useGameStore.getState().activePetId).toBeNull()
+  })
+
+  it('Gold로 뽑기권을 살 수 있다', () => {
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: GACHA.ticketGoldCost },
+      petTickets: 0,
+    })
+    useGameStore.getState().buyTicket(1)
+    expect(useGameStore.getState().petTickets).toBe(1)
+    expect(useGameStore.getState().character.gold).toBe(0)
+  })
+
+  it('Gold가 모자라면 뽑기권을 살 수 없다', () => {
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: 0 },
+      petTickets: 0,
+    })
+    useGameStore.getState().buyTicket(1)
+    expect(useGameStore.getState().petTickets).toBe(0)
+  })
+
+  it('EXP 펫을 동행하면 과제 보상이 늘어난다', () => {
+    useGameStore.getState().addTask({ type: 'daily', title: '공부', difficulty: 3, repeatDays: [] })
+    const task = useGameStore.getState().tasks[0]
+
+    // 동행 없이 완료
+    useGameStore.getState().completeTask(task.id)
+    const plain = useGameStore.getState().events[0].expDelta
+
+    // S등급 EXP 펫을 강제로 보유·동행시킨 뒤 다시 완료
+    const expPet = PET_SPECIES.find((s) => s.effect === 'exp' && s.grade === 'S')!
+    useGameStore.setState({
+      pets: [{ id: 'p1', speciesId: expPet.id, hatchedOn: today }],
+      activePetId: expPet.id,
+      events: [],
+    })
+    useGameStore.getState().completeTask(task.id)
+    const boosted = useGameStore.getState().events[0].expDelta
+
+    expect(boosted).toBeGreaterThan(plain)
+  })
+
+  it('전투 펫을 동행하면 던전 전투 능력치가 오른다', () => {
+    useGameStore.getState().enterDungeon()
+    const plainHp = useGameStore.getState().battle!.player.maxHp
+
+    // S등급에는 HP 펫이 없으므로 A등급 중 가장 강한 HP 펫을 쓴다
+    const hpPet = PET_SPECIES.find((s) => s.effect === 'hp' && s.grade === 'A')!
+    useGameStore.setState({
+      pets: [{ id: 'p1', speciesId: hpPet.id, hatchedOn: today }],
+      activePetId: hpPet.id,
+      battle: null,
+      dungeonDay: { date: today, entriesUsed: 0 },
+    })
+    useGameStore.getState().enterDungeon()
+
+    expect(useGameStore.getState().battle!.player.maxHp).toBeGreaterThan(plainHp)
   })
 })
 

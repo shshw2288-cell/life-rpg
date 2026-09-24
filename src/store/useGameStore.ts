@@ -3,11 +3,12 @@ import { persist } from 'zustand/middleware'
 import { MATERIALS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS, DEATH_PENALTY, HISTORY_RETENTION_DAYS } from '../data/gameConfig'
 import { MONSTERS, findMonster } from '../data/monsterConfig'
+import { GACHA, GRADES } from '../data/petConfig'
 import { calcRewards, createBattle, deriveCombatStats, takeTurn } from '../engine/combat'
 import { countCompletionsOn, entryStatus, rollOverDay } from '../engine/dungeon'
 import { countHabitEvents } from '../engine/ledger'
 import { applyExp } from '../engine/leveling'
-import { progressPets } from '../engine/pets'
+import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/pets'
 import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../engine/rewards'
 import { planSettlement } from '../engine/schedule'
 import { addDays, diffDays, getGameDate } from '../lib/date'
@@ -49,6 +50,12 @@ interface GameStore extends GameState {
   battleAction: (action: PlayerAction) => void
   /** 결과 화면을 닫고 던전 입구로 돌아간다 */
   leaveBattle: () => void
+  /** 펫 뽑기. 뽑기권이 모자라면 아무 일도 하지 않는다. */
+  drawPet: (count: number) => DrawResult[]
+  /** 뽑기권을 Gold로 구매 */
+  buyTicket: (count?: number) => void
+  /** 동행 펫 지정. null이면 해제 */
+  setActivePet: (speciesId: string | null) => void
 }
 
 function initialState(): GameState {
@@ -68,6 +75,8 @@ function initialState(): GameState {
     settlements: [],
     eggs: [],
     pets: [],
+    activePetId: null,
+    petTickets: GACHA.startingTickets,
     materials: {},
     dungeonDay: { date: today, entriesUsed: 0 },
     battle: null,
@@ -177,7 +186,7 @@ export const useGameStore = create<GameStore>()(
 
         const now = new Date()
         const today = getGameDate(now)
-        const reward = completionReward(task.difficulty)
+        const reward = applyPetBonus(completionReward(task.difficulty), state.activePetId)
 
         const event: TaskEvent = {
           id: newId(),
@@ -218,10 +227,17 @@ export const useGameStore = create<GameStore>()(
         feedback.push(...petFeedback(petResult.newEgg, petResult.hatched))
 
         set({
-          character: applied.character,
+          character: {
+            ...applied.character,
+            // 중복 부화 환급금
+            gold: applied.character.gold + petResult.refundGold,
+          },
           events: pruneEvents([...state.events, event], today),
           eggs: petResult.eggs,
           pets: petResult.pets,
+          petTickets: state.petTickets + petResult.ticketsGained,
+          // 첫 펫이면 자동으로 동행 지정
+          activePetId: state.activePetId ?? petResult.hatched?.speciesId ?? null,
           tasks:
             task.type === 'todo'
               ? state.tasks.map((item) =>
@@ -243,7 +259,7 @@ export const useGameStore = create<GameStore>()(
         const todayCount = countHabitEvents(state.events, task.id, today, polarity)
         const reward =
           polarity === 'positive'
-            ? positiveHabitReward(task.difficulty, todayCount)
+            ? applyPetBonus(positiveHabitReward(task.difficulty, todayCount), state.activePetId)
             : negativeHabitPenalty(task.difficulty)
 
         const event: TaskEvent = {
@@ -382,7 +398,8 @@ export const useGameStore = create<GameStore>()(
         if (status.remaining <= 0) return
 
         const monster = findMonster(monsterId ?? MONSTERS[0].id) ?? MONSTERS[0]
-        const stats = deriveCombatStats(state.character.level)
+        // 동행 펫의 전투 효과를 능력치에 더한다
+        const stats = deriveCombatStats(state.character.level, petBonuses(state.activePetId).combat)
 
         set({
           // 입장할 때 횟수를 먼저 차감한다. 새로고침으로 되돌릴 수 없다.
@@ -443,6 +460,74 @@ export const useGameStore = create<GameStore>()(
       },
 
       leaveBattle: () => set({ battle: null }),
+
+      drawPet: (count) => {
+        const state = get()
+        if (count <= 0 || state.petTickets < count) return []
+
+        const results = drawPets({
+          count,
+          ownedIds: state.pets.map((pet) => pet.speciesId),
+          rng: Math.random,
+        })
+
+        const today = getGameDate(new Date())
+        const newPets: Pet[] = []
+        let refund = 0
+        for (const result of results) {
+          if (result.duplicate) {
+            refund += result.refundGold
+          } else {
+            newPets.push({ id: newId(), speciesId: result.species.id, hatchedOn: today })
+          }
+        }
+
+        const best = results.reduce((top, result) =>
+          GRADES[result.species.grade].multiplier > GRADES[top.species.grade].multiplier
+            ? result
+            : top,
+        )
+
+        set({
+          petTickets: state.petTickets - count,
+          pets: [...state.pets, ...newPets],
+          character: { ...state.character, gold: state.character.gold + refund },
+          // 첫 펫이면 자동으로 동행으로 지정한다
+          activePetId: state.activePetId ?? newPets[0]?.speciesId ?? state.activePetId,
+          feedback: [
+            ...state.feedback,
+            {
+              id: newId(),
+              kind: best.species.grade === 'S' || best.species.grade === 'A' ? 'hatch' : 'egg',
+              title: `${best.species.grade}등급 ${best.species.name}!`,
+              detail:
+                count > 1
+                  ? `${count}회 뽑기 · 새 펫 ${newPets.length}마리${refund > 0 ? ` · 중복 환급 ${refund} Gold` : ''}`
+                  : best.duplicate
+                    ? `중복 · ${best.refundGold} Gold 환급`
+                    : '새로운 친구가 늘었습니다',
+            },
+          ],
+        })
+
+        return results
+      },
+
+      buyTicket: (count = 1) => {
+        const state = get()
+        const cost = GACHA.ticketGoldCost * count
+        if (state.character.gold < cost) return
+        set({
+          character: { ...state.character, gold: state.character.gold - cost },
+          petTickets: state.petTickets + count,
+        })
+      },
+
+      setActivePet: (speciesId) => {
+        const state = get()
+        if (speciesId && !state.pets.some((pet) => pet.speciesId === speciesId)) return
+        set({ activePetId: speciesId })
+      },
     }),
     {
       name: 'life-rpg-save',
@@ -455,28 +540,53 @@ export const useGameStore = create<GameStore>()(
         settlements: state.settlements,
         eggs: state.eggs,
         pets: state.pets,
+        activePetId: state.activePetId,
+        petTickets: state.petTickets,
         materials: state.materials,
         dungeonDay: state.dungeonDay,
         battle: state.battle,
         meta: state.meta,
       }),
       migrate: (persisted, version) => {
-        const state = persisted as Partial<GameState>
-        // v1 -> v2: 던전 관련 필드가 없던 저장 데이터를 채운다. 기존 과제·기록은 그대로 둔다.
+        let state = persisted as Partial<GameState>
+
+        // v1 -> v2: 던전 필드 추가. 기존 과제·기록은 그대로 둔다.
         if (version < 2) {
-          return {
+          state = {
             ...state,
             materials: state.materials ?? {},
             dungeonDay: state.dungeonDay ?? { date: getGameDate(new Date()), entriesUsed: 0 },
             battle: state.battle ?? null,
-            schemaVersion: SCHEMA_VERSION,
-          } as GameState
+          }
         }
-        return state as GameState
+
+        // v2 -> v3: 펫 등급·뽑기 추가. 이미 모은 펫은 그대로 두고 첫 마리를 동행으로 지정한다.
+        if (version < 3) {
+          state = {
+            ...state,
+            petTickets: state.petTickets ?? GACHA.startingTickets,
+            activePetId: state.activePetId ?? state.pets?.[0]?.speciesId ?? null,
+          }
+        }
+
+        return { ...state, schemaVersion: SCHEMA_VERSION } as GameState
       },
     },
   ),
 )
+
+/** 동행 펫의 EXP·Gold 효과를 보상에 적용한다 */
+function applyPetBonus(
+  reward: { exp: number; gold: number; hp: number },
+  activePetId: string | null,
+): { exp: number; gold: number; hp: number } {
+  const bonus = petBonuses(activePetId)
+  return {
+    exp: Math.round(reward.exp * bonus.expRate),
+    gold: Math.round(reward.gold * bonus.goldRate),
+    hp: reward.hp,
+  }
+}
 
 function petFeedback(newEgg?: Egg, hatched?: Pet): FeedbackItem[] {
   const items: FeedbackItem[] = []
