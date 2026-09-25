@@ -24,6 +24,8 @@ interface TaskBase {
   createdOn: GameDate
   /** 있으면 완료 시 수치를 입력받아 기록에 남긴다. */
   metric?: TaskMetric
+  /** 공부 과목에 묶인 할 일이면 그 과목 id */
+  subjectId?: string
 }
 
 export interface HabitTask extends TaskBase {

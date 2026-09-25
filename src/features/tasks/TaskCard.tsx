@@ -10,6 +10,8 @@ interface TaskCardProps {
   done?: boolean
   /** 오늘 기록 횟수 (습관) */
   todayCount?: number
+  /** 연결된 공부 과목 이름 */
+  subjectLabel?: { name: string; color: string }
   onComplete?: (metricValue?: number) => void
   onHabit?: (polarity: 'positive' | 'negative') => void
   onEdit?: () => void
@@ -20,6 +22,7 @@ export function TaskCard({
   task,
   done = false,
   todayCount = 0,
+  subjectLabel,
   onComplete,
   onHabit,
   onEdit,
@@ -61,6 +64,19 @@ export function TaskCard({
               <span className="rounded bg-mana-500/20 px-1.5 py-0.5 text-[10px] text-mana-400">
                 {task.metric.unit} 기록
                 {task.metric.target ? ` · 목표 ${task.metric.target}` : ''}
+              </span>
+            )}
+            {subjectLabel && (
+              <span
+                className="flex items-center gap-1 rounded bg-abyss-700 px-1.5 py-0.5 text-[10px] text-slate-300"
+                title="공부 과목"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: subjectLabel.color }}
+                  aria-hidden
+                />
+                {subjectLabel.name}
               </span>
             )}
             {done && <span className="text-[10px] text-slate-500">오늘 완료</span>}

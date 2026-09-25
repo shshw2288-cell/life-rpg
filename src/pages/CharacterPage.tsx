@@ -20,7 +20,9 @@ export function CharacterPage() {
 
   return (
     <PageShell title="캐릭터" description="과제를 완료해 레벨을 올리면 루미가 진화합니다.">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[320px_1fr]">
+        {/* 왼쪽 칸: 현재 모습 + 꾸미기를 한 칸으로 묶는다 */}
+        <div className="flex flex-col gap-4">
         <Panel title="현재 모습">
           <div className="flex flex-col items-center gap-3">
             <LumiAvatar
@@ -63,7 +65,6 @@ export function CharacterPage() {
           </div>
         </Panel>
 
-        <div className="lg:col-start-1">
           <Panel title="꾸미기">
             {ownedCosmetics.length === 0 ? (
               <p className="text-sm text-slate-400">

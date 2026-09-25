@@ -238,6 +238,117 @@ describe('던전', () => {
   })
 })
 
+describe('공부 과목과 회독', () => {
+  function addSubject(name: string, targetRounds?: number) {
+    useGameStore.getState().addSubject({
+      name,
+      difficulty: 3,
+      color: '#f59e0b',
+      ...(targetRounds ? { targetRounds } : {}),
+    })
+    return useGameStore.getState().subjects.at(-1)!
+  }
+
+  it('과목을 추가하면 회독 0으로 시작한다', () => {
+    const subject = addSubject('시스템 프로그래밍')
+    expect(subject).toMatchObject({ name: '시스템 프로그래밍', rounds: 0, createdOn: today })
+  })
+
+  it('+를 누르면 회독 수가 오르고 보상을 받는다', () => {
+    const subject = addSubject('자료구조')
+    useGameStore.getState().addRound(subject.id)
+
+    const state = useGameStore.getState()
+    expect(state.subjects[0].rounds).toBe(1)
+    expect(state.character.exp).toBeGreaterThan(0)
+    expect(state.events[0]).toMatchObject({ action: 'study_round', localDate: today })
+  })
+
+  it('같은 날 반복하면 보상이 줄어든다', () => {
+    const subject = addSubject('영어')
+    useGameStore.getState().addRound(subject.id)
+    useGameStore.getState().addRound(subject.id)
+
+    const events = useGameStore.getState().events
+    expect(events[1].expDelta).toBeLessThan(events[0].expDelta)
+  })
+
+  it('목표 회독을 채우면 보너스 Gold를 준다', () => {
+    const subject = addSubject('알고리즘', 2)
+    useGameStore.getState().addRound(subject.id)
+    const goldAfterFirst = useGameStore.getState().character.gold
+    useGameStore.getState().addRound(subject.id)
+
+    const events = useGameStore.getState().events
+    expect(events[1].goldDelta).toBeGreaterThan(events[0].goldDelta)
+    expect(useGameStore.getState().character.gold).toBeGreaterThan(goldAfterFirst * 2)
+  })
+
+  it('− 버튼은 회독 수만 되돌리고 기록은 남긴다', () => {
+    const subject = addSubject('통계')
+    useGameStore.getState().addRound(subject.id)
+    useGameStore.getState().undoRound(subject.id)
+
+    expect(useGameStore.getState().subjects[0].rounds).toBe(0)
+    expect(useGameStore.getState().events).toHaveLength(1)
+  })
+
+  it('0회독에서는 더 내려가지 않는다', () => {
+    const subject = addSubject('철학')
+    useGameStore.getState().undoRound(subject.id)
+    expect(useGameStore.getState().subjects[0].rounds).toBe(0)
+  })
+
+  it('삭제해도 회독 기록은 남는다', () => {
+    const subject = addSubject('물리')
+    useGameStore.getState().addRound(subject.id)
+    useGameStore.getState().archiveSubject(subject.id)
+
+    expect(useGameStore.getState().subjects[0].archivedAt).toBeDefined()
+    expect(useGameStore.getState().events).toHaveLength(1)
+  })
+})
+
+describe('할 일을 과목에 연결', () => {
+  function setup() {
+    useGameStore.getState().addSubject({ name: '자료구조', difficulty: 3, color: '#f59e0b' })
+    useGameStore.getState().addTask({ type: 'todo', title: '3장 문제 풀기', difficulty: 2 })
+    const subject = useGameStore.getState().subjects[0]
+    const task = useGameStore.getState().tasks[0]
+    return { subject, task }
+  }
+
+  it('할 일을 과목에 붙인다', () => {
+    const { subject, task } = setup()
+    useGameStore.getState().assignTaskToSubject(task.id, subject.id)
+    expect(useGameStore.getState().tasks[0].subjectId).toBe(subject.id)
+  })
+
+  it('연결을 해제할 수 있다', () => {
+    const { subject, task } = setup()
+    useGameStore.getState().assignTaskToSubject(task.id, subject.id)
+    useGameStore.getState().assignTaskToSubject(task.id, null)
+    expect(useGameStore.getState().tasks[0].subjectId).toBeUndefined()
+  })
+
+  it('없는 과목에는 붙지 않는다', () => {
+    const { task } = setup()
+    useGameStore.getState().assignTaskToSubject(task.id, '없는-과목')
+    expect(useGameStore.getState().tasks[0].subjectId).toBeUndefined()
+  })
+
+  it('연결된 할 일도 평소처럼 완료된다', () => {
+    const { subject, task } = setup()
+    useGameStore.getState().assignTaskToSubject(task.id, subject.id)
+    useGameStore.getState().completeTask(task.id)
+
+    const state = useGameStore.getState()
+    expect(state.tasks[0].type === 'todo' && state.tasks[0].completedOn).toBe(today)
+    expect(state.tasks[0].subjectId).toBe(subject.id)
+    expect(state.character.gold).toBeGreaterThan(0)
+  })
+})
+
 describe('탑과 상점', () => {
   /** 전투 능력치는 입장 시점에 정해지므로 레벨은 입장 전에 올려둬야 한다 */
   function levelUpTo(level: number) {

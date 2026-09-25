@@ -87,6 +87,8 @@ interface GameStore extends GameState {
   addRound: (id: string) => void
   /** 잘못 누른 회독 되돌리기. 회독 수만 줄이고 이미 받은 보상은 두 번 계산하지 않는다. */
   undoRound: (id: string) => void
+  /** 할 일을 과목에 연결한다. subjectId가 null이면 연결 해제. */
+  assignTaskToSubject: (taskId: string, subjectId: string | null) => void
   /** 백업 파일로 내보낼 현재 상태 */
   exportSave: () => GameState
   /** 백업에서 상태를 통째로 되돌린다 */
@@ -725,6 +727,22 @@ export const useGameStore = create<GameStore>()(
             ...applied.feedback,
           ],
           meta: { ...state.meta, updatedAt: now.toISOString() },
+        })
+      },
+
+      assignTaskToSubject: (taskId, subjectId) => {
+        const state = get()
+        if (subjectId && !state.subjects.some((subject) => subject.id === subjectId)) return
+        set({
+          tasks: state.tasks.map((task) =>
+            task.id === taskId
+              ? ({
+                  ...task,
+                  subjectId: subjectId ?? undefined,
+                  updatedAt: new Date().toISOString(),
+                } as Task)
+              : task,
+          ),
         })
       },
 

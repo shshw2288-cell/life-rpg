@@ -9,7 +9,15 @@ import { formatDisplayDate, getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
 
 export function DashboardPage() {
-  const { tasks, events, character, eggs, cosmetics, completeTask, recordHabit } = useGameStore()
+  const { tasks, subjects, events, character, eggs, cosmetics, completeTask, recordHabit } =
+    useGameStore()
+
+  /** 과제에 연결된 공부 과목 배지 */
+  const subjectLabelOf = (subjectId?: string) => {
+    if (!subjectId) return undefined
+    const subject = subjects.find((item) => item.id === subjectId)
+    return subject ? { name: subject.name, color: subject.color } : undefined
+  }
   const today = getGameDate(new Date())
 
   const active = tasks.filter((task) => !task.archivedAt)
@@ -41,6 +49,7 @@ export function DashboardPage() {
                     key={task.id}
                     task={task}
                     done={hasCompletedOn(events, task.id, today)}
+                    subjectLabel={subjectLabelOf(task.subjectId)}
                     onComplete={(metricValue) => completeTask(task.id, metricValue)}
                   />
                 ))
@@ -74,6 +83,7 @@ export function DashboardPage() {
                   <TaskCard
                     key={task.id}
                     task={task}
+                    subjectLabel={subjectLabelOf(task.subjectId)}
                     onComplete={(metricValue) => completeTask(task.id, metricValue)}
                   />
                 ))

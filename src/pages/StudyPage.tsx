@@ -4,20 +4,38 @@ import { EmptyState, PageShell, Panel } from '../components/layout/PageShell'
 import { DIFFICULTY_TABLE, type Difficulty } from '../data/gameConfig'
 import { STUDY, SUBJECT_COLORS } from '../data/studyConfig'
 import { countRoundsOn, totalRoundsOn } from '../engine/study'
+import { DraggableTask, TASK_DRAG_TYPE } from '../features/study/LinkedTaskList'
 import { getGameDate } from '../lib/date'
 import { useGameStore, type SubjectDraft } from '../store/useGameStore'
 import type { Subject } from '../types/study'
+import type { Task } from '../types/task'
 
 export function StudyPage() {
-  const { subjects, events, addSubject, updateSubject, archiveSubject, addRound, undoRound } =
-    useGameStore()
+  const {
+    subjects,
+    tasks,
+    events,
+    addSubject,
+    updateSubject,
+    archiveSubject,
+    addRound,
+    undoRound,
+    assignTaskToSubject,
+    completeTask,
+  } = useGameStore()
   const today = getGameDate(new Date())
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Subject | undefined>()
   const [confirmDelete, setConfirmDelete] = useState<Subject | undefined>()
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const active = subjects.filter((subject) => !subject.archivedAt)
+  const openTasks = tasks.filter(
+    (task) => !task.archivedAt && task.type !== 'habit' && !(task.type === 'todo' && task.completedOn),
+  )
+  const unlinkedTasks = openTasks.filter((task) => !task.subjectId)
+  const tasksOf = (subjectId: string) => openTasks.filter((task) => task.subjectId === subjectId)
   const totalRounds = active.reduce((sum, subject) => sum + subject.rounds, 0)
   const roundsToday = totalRoundsOn(events, today)
 
@@ -39,7 +57,17 @@ export function StudyPage() {
                 <SubjectCard
                   key={subject.id}
                   subject={subject}
+                  subjects={active}
                   todayCount={countRoundsOn(events, subject.id, today)}
+                  linkedTasks={tasksOf(subject.id)}
+                  dragOver={dragOverId === subject.id}
+                  onDragOver={(over) => setDragOverId(over ? subject.id : null)}
+                  onDropTask={(taskId) => {
+                    assignTaskToSubject(taskId, subject.id)
+                    setDragOverId(null)
+                  }}
+                  onAssign={assignTaskToSubject}
+                  onCompleteTask={(taskId) => completeTask(taskId)}
                   onAdd={() => addRound(subject.id)}
                   onUndo={() => undoRound(subject.id)}
                   onEdit={() => {
@@ -66,6 +94,37 @@ export function StudyPage() {
         </Panel>
 
         <aside className="flex flex-col gap-4">
+          <Panel title={`과목 없는 할 일 (${unlinkedTasks.length})`}>
+            <p className="-mt-2 mb-2 text-[11px] text-slate-500">
+              끌어서 왼쪽 과목 카드에 놓으면 그 과목의 할 일이 됩니다. 드래그가 어려우면 목록의
+              과목 선택을 쓰세요.
+            </p>
+            <ul
+              onDragOver={(dragEvent) => dragEvent.preventDefault()}
+              onDrop={(dragEvent) => {
+                dragEvent.preventDefault()
+                const taskId = dragEvent.dataTransfer.getData(TASK_DRAG_TYPE)
+                if (taskId) assignTaskToSubject(taskId, null)
+              }}
+              className="flex min-h-16 flex-col gap-1.5 rounded-lg border border-dashed border-abyss-700 p-2"
+            >
+              {unlinkedTasks.length === 0 ? (
+                <li className="py-2 text-center text-xs text-slate-600">
+                  모든 할 일이 과목에 연결되어 있습니다
+                </li>
+              ) : (
+                unlinkedTasks.map((task) => (
+                  <DraggableTask
+                    key={task.id}
+                    task={task}
+                    subjects={active}
+                    onAssign={(subjectId) => assignTaskToSubject(task.id, subjectId)}
+                  />
+                ))
+              )}
+            </ul>
+          </Panel>
+
           <Panel title="요약">
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -163,14 +222,28 @@ export function StudyPage() {
 
 function SubjectCard({
   subject,
+  subjects,
   todayCount,
+  linkedTasks,
+  dragOver,
+  onDragOver,
+  onDropTask,
+  onAssign,
+  onCompleteTask,
   onAdd,
   onUndo,
   onEdit,
   onDelete,
 }: {
   subject: Subject
+  subjects: Subject[]
   todayCount: number
+  linkedTasks: Task[]
+  dragOver: boolean
+  onDragOver: (over: boolean) => void
+  onDropTask: (taskId: string) => void
+  onAssign: (taskId: string, subjectId: string | null) => void
+  onCompleteTask: (taskId: string) => void
   onAdd: () => void
   onUndo: () => void
   onEdit: () => void
@@ -181,7 +254,22 @@ function SubjectCard({
   const difficulty = DIFFICULTY_TABLE[subject.difficulty]
 
   return (
-    <article className="rounded-xl border border-abyss-700 bg-abyss-800/60 p-3">
+    <article
+      onDragOver={(dragEvent) => {
+        dragEvent.preventDefault()
+        dragEvent.dataTransfer.dropEffect = 'move'
+        onDragOver(true)
+      }}
+      onDragLeave={() => onDragOver(false)}
+      onDrop={(dragEvent) => {
+        dragEvent.preventDefault()
+        const taskId = dragEvent.dataTransfer.getData(TASK_DRAG_TYPE)
+        if (taskId) onDropTask(taskId)
+      }}
+      className={`rounded-xl border p-3 transition-colors ${
+        dragOver ? 'border-ember-400 bg-abyss-700' : 'border-abyss-700 bg-abyss-800/60'
+      }`}
+    >
       <div className="flex items-start gap-3">
         <span
           className="mt-1 h-8 w-1.5 shrink-0 rounded-full"
@@ -270,6 +358,31 @@ function SubjectCard({
           </button>
         </div>
       </div>
+
+      {(linkedTasks.length > 0 || dragOver) && (
+        <div className="mt-3 border-t border-abyss-700/70 pt-2">
+          <p className="mb-1.5 text-[11px] text-slate-500">
+            이 과목의 할 일 ({linkedTasks.length})
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {linkedTasks.map((task) => (
+              <DraggableTask
+                key={task.id}
+                task={task}
+                subjects={subjects}
+                currentSubjectId={subject.id}
+                onComplete={() => onCompleteTask(task.id)}
+                onAssign={(subjectId) => onAssign(task.id, subjectId)}
+              />
+            ))}
+            {dragOver && (
+              <li className="rounded-lg border border-dashed border-ember-400 py-2 text-center text-[11px] text-ember-400">
+                여기에 놓기
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
     </article>
   )
 }
