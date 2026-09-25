@@ -2,6 +2,7 @@ import type { GameDate } from '../lib/date'
 import type { BattleState, CosmeticLoadout, DungeonDay, TowerProgress } from './battle'
 import type { Egg, Pet } from './pet'
 import type { Subject } from './study'
+import type { WorkoutState } from './workout'
 import type { Task, TaskEvent } from './task'
 
 export interface Character {
@@ -28,6 +29,8 @@ export interface GameState {
   tasks: Task[]
   /** 공부 과목 (회독 관리) */
   subjects: Subject[]
+  /** 운동 기록 (부위별 종목 무게, 3대 기록) */
+  workout: WorkoutState
   events: TaskEvent[]
   settlements: DailySettlement[]
   eggs: Egg[]
@@ -65,5 +68,6 @@ export interface GameState {
  * 3: 펫 등급·뽑기(activePetId, petTickets) 추가
  * 4: 탑·상점(tower, towerKeys, inventory, cosmetics) 추가
  * 5: 공부 과목(subjects) 추가
+ * 6: 운동 기록(workout) 추가
  */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6

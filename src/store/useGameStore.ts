@@ -29,6 +29,8 @@ import { SCHEMA_VERSION } from '../types/gameState'
 import type { Egg, Pet } from '../types/pet'
 import type { Subject } from '../types/study'
 import type { Task, TaskEvent } from '../types/task'
+import { EMPTY_WORKOUT, type BigThreeLift, type MuscleGroup } from '../types/workout'
+import { MAX_WEIGHT } from '../data/workoutConfig'
 
 /** 완료·기록 직후 화면에 보여줄 알림 */
 export interface FeedbackItem {
@@ -89,6 +91,15 @@ interface GameStore extends GameState {
   undoRound: (id: string) => void
   /** 할 일을 과목에 연결한다. subjectId가 null이면 연결 해제. */
   assignTaskToSubject: (taskId: string, subjectId: string | null) => void
+  /** 운동 종목 추가 */
+  addExercise: (group: MuscleGroup, name: string, weight?: number) => void
+  /** 종목 무게 조절. delta만큼 더하고 0~상한으로 자른다. */
+  adjustExerciseWeight: (id: string, delta: number) => void
+  setExerciseWeight: (id: string, weight: number) => void
+  removeExercise: (id: string) => void
+  /** 3대 운동 무게 조절 */
+  adjustBigThree: (lift: BigThreeLift, delta: number) => void
+  setBigThree: (lift: BigThreeLift, weight: number) => void
   /** 백업 파일로 내보낼 현재 상태 */
   exportSave: () => GameState
   /** 백업에서 상태를 통째로 되돌린다 */
@@ -109,6 +120,7 @@ function initialState(): GameState {
     },
     tasks: [],
     subjects: [],
+    workout: EMPTY_WORKOUT,
     events: [],
     settlements: [],
     eggs: [],
@@ -746,6 +758,70 @@ export const useGameStore = create<GameStore>()(
         })
       },
 
+      addExercise: (group, name, weight = 0) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        const state = get()
+        // 같은 부위에 같은 이름이 있으면 추가하지 않는다
+        if (
+          state.workout.exercises.some(
+            (exercise) =>
+              !exercise.archivedAt && exercise.group === group && exercise.name === trimmed,
+          )
+        ) {
+          return
+        }
+
+        const now = new Date()
+        const clamped = clampWeight(weight)
+        set({
+          workout: {
+            ...state.workout,
+            exercises: [
+              ...state.workout.exercises,
+              {
+                id: newId(),
+                group,
+                name: trimmed,
+                weight: clamped,
+                best: clamped,
+                updatedOn: getGameDate(now),
+                createdAt: now.toISOString(),
+              },
+            ],
+          },
+        })
+      },
+
+      adjustExerciseWeight: (id, delta) => {
+        const state = get()
+        const exercise = state.workout.exercises.find((item) => item.id === id)
+        if (!exercise) return
+        applyExerciseWeight(set, state, id, exercise.weight + delta)
+      },
+
+      setExerciseWeight: (id, weight) => {
+        applyExerciseWeight(set, get(), id, weight)
+      },
+
+      removeExercise: (id) => {
+        set((state) => ({
+          workout: {
+            ...state.workout,
+            exercises: state.workout.exercises.filter((exercise) => exercise.id !== id),
+          },
+        }))
+      },
+
+      adjustBigThree: (lift, delta) => {
+        const state = get()
+        applyBigThree(set, state, lift, state.workout.bigThree[lift] + delta)
+      },
+
+      setBigThree: (lift, weight) => {
+        applyBigThree(set, get(), lift, weight)
+      },
+
       undoRound: (id) => {
         set((state) => ({
           subjects: state.subjects.map((subject) =>
@@ -763,6 +839,7 @@ export const useGameStore = create<GameStore>()(
           character: state.character,
           tasks: state.tasks,
           subjects: state.subjects,
+          workout: state.workout,
           events: state.events,
           settlements: state.settlements,
           eggs: state.eggs,
@@ -793,6 +870,7 @@ export const useGameStore = create<GameStore>()(
         character: state.character,
         tasks: state.tasks,
         subjects: state.subjects,
+        workout: state.workout,
         events: state.events,
         settlements: state.settlements,
         eggs: state.eggs,
@@ -814,6 +892,45 @@ export const useGameStore = create<GameStore>()(
     },
   ),
 )
+
+/** 무게를 0 ~ 상한 사이로 자르고 0.5kg 단위로 반올림한다 */
+function clampWeight(weight: number): number {
+  if (!Number.isFinite(weight)) return 0
+  return Math.max(0, Math.min(MAX_WEIGHT, Math.round(weight * 2) / 2))
+}
+
+type SetState = (partial: Partial<GameStore>) => void
+
+/** 종목 무게를 바꾸고 최고 기록을 갱신한다 */
+function applyExerciseWeight(set: SetState, state: GameStore, id: string, weight: number) {
+  const next = clampWeight(weight)
+  const today = getGameDate(new Date())
+  set({
+    workout: {
+      ...state.workout,
+      exercises: state.workout.exercises.map((exercise) =>
+        exercise.id === id
+          ? { ...exercise, weight: next, best: Math.max(exercise.best, next), updatedOn: today }
+          : exercise,
+      ),
+    },
+  })
+}
+
+/** 3대 운동 무게를 바꾸고 최고 기록을 갱신한다 */
+function applyBigThree(set: SetState, state: GameStore, lift: BigThreeLift, weight: number) {
+  const next = clampWeight(weight)
+  set({
+    workout: {
+      ...state.workout,
+      bigThree: { ...state.workout.bigThree, [lift]: next },
+      bigThreeBest: {
+        ...state.workout.bigThreeBest,
+        [lift]: Math.max(state.workout.bigThreeBest[lift] ?? 0, next),
+      },
+    },
+  })
+}
 
 /** 부활의 부적을 가지고 있으면 회복 비율을, 없으면 null을 준다 */
 function reviveRatioOf(inventory: Record<string, number>): number | null {

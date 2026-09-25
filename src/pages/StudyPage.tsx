@@ -4,6 +4,7 @@ import { EmptyState, PageShell, Panel } from '../components/layout/PageShell'
 import { DIFFICULTY_TABLE, type Difficulty } from '../data/gameConfig'
 import { STUDY, SUBJECT_COLORS } from '../data/studyConfig'
 import { countRoundsOn, totalRoundsOn } from '../engine/study'
+import { useRewardEffect } from '../features/effects/useRewardEffect'
 import { DraggableTask, TASK_DRAG_TYPE } from '../features/study/LinkedTaskList'
 import { getGameDate } from '../lib/date'
 import { useGameStore, type SubjectDraft } from '../store/useGameStore'
@@ -252,6 +253,8 @@ function SubjectCard({
   const target = subject.targetRounds
   const progress = target ? Math.min(1, subject.rounds / target) : 0
   const difficulty = DIFFICULTY_TABLE[subject.difficulty]
+  const withEffect = useRewardEffect()
+  const [flash, setFlash] = useState(false)
 
   return (
     <article
@@ -266,8 +269,12 @@ function SubjectCard({
         const taskId = dragEvent.dataTransfer.getData(TASK_DRAG_TYPE)
         if (taskId) onDropTask(taskId)
       }}
-      className={`rounded-xl border p-3 transition-colors ${
-        dragOver ? 'border-ember-400 bg-abyss-700' : 'border-abyss-700 bg-abyss-800/60'
+      className={`rounded-xl border p-3 transition-all duration-300 ${
+        flash
+          ? 'scale-[1.01] border-ember-400 bg-ember-500/10 shadow-[0_0_20px_rgba(251,191,36,0.25)]'
+          : dragOver
+            ? 'border-ember-400 bg-abyss-700'
+            : 'border-abyss-700 bg-abyss-800/60'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -332,9 +339,13 @@ function SubjectCard({
             <span className="text-[10px] text-slate-500">회독</span>
             <button
               type="button"
-              onClick={onAdd}
+              onClick={(clickEvent) => {
+                withEffect(clickEvent.currentTarget, onAdd)
+                setFlash(true)
+                setTimeout(() => setFlash(false), 450)
+              }}
               aria-label={`${subject.name} 회독 1회 추가`}
-              className="ml-1 rounded-lg bg-ember-500 p-1.5 text-abyss-950 hover:bg-ember-400"
+              className="ml-1 rounded-lg bg-ember-500 p-1.5 text-abyss-950 transition-transform hover:bg-ember-400 active:scale-90"
             >
               <Plus size={16} aria-hidden />
             </button>

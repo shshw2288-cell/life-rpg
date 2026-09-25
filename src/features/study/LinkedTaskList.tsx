@@ -2,6 +2,7 @@ import { Check, GripVertical, X } from 'lucide-react'
 import { DIFFICULTY_TABLE } from '../../data/gameConfig'
 import type { Subject } from '../../types/study'
 import type { Task } from '../../types/task'
+import { useRewardEffect } from '../effects/useRewardEffect'
 
 export const TASK_DRAG_TYPE = 'application/x-life-rpg-task'
 
@@ -21,6 +22,7 @@ export function DraggableTask({
 }) {
   const difficulty = DIFFICULTY_TABLE[task.difficulty]
   const done = task.type === 'todo' && Boolean(task.completedOn)
+  const withEffect = useRewardEffect()
 
   return (
     <li
@@ -59,9 +61,9 @@ export function DraggableTask({
       {onComplete && !done && (
         <button
           type="button"
-          onClick={onComplete}
+          onClick={(clickEvent) => withEffect(clickEvent.currentTarget, onComplete)}
           aria-label={`${task.title} 완료`}
-          className="shrink-0 rounded bg-ember-500 p-1 text-abyss-950 hover:bg-ember-400"
+          className="shrink-0 rounded bg-ember-500 p-1 text-abyss-950 transition-transform hover:bg-ember-400 active:scale-90"
         >
           <Check size={12} aria-hidden />
         </button>

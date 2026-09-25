@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { DIFFICULTY_TABLE } from '../../data/gameConfig'
 import { WEEKDAY_LABELS } from '../../lib/date'
 import type { Task } from '../../types/task'
+import { useRewardEffect } from '../effects/useRewardEffect'
 
 interface TaskCardProps {
   task: Task
@@ -30,23 +31,40 @@ export function TaskCard({
 }: TaskCardProps) {
   const [metricInput, setMetricInput] = useState('')
   const [askMetric, setAskMetric] = useState(false)
+  const [flash, setFlash] = useState<'reward' | 'penalty' | null>(null)
   const difficulty = DIFFICULTY_TABLE[task.difficulty]
+  const withEffect = useRewardEffect()
 
-  const handleComplete = () => {
+  /** 카드를 잠깐 번쩍이게 한다 */
+  const pulse = (tone: 'reward' | 'penalty') => {
+    setFlash(tone)
+    setTimeout(() => setFlash(null), 450)
+  }
+
+  const handleComplete = (target: HTMLElement | null) => {
     if (task.metric && !askMetric) {
       setAskMetric(true)
       return
     }
     const value = task.metric ? Number(metricInput) : undefined
-    onComplete?.(Number.isFinite(value) && value !== undefined && value > 0 ? value : undefined)
+    withEffect(target, () =>
+      onComplete?.(Number.isFinite(value) && value !== undefined && value > 0 ? value : undefined),
+    )
+    pulse('reward')
     setAskMetric(false)
     setMetricInput('')
   }
 
   return (
     <article
-      className={`rounded-xl border p-3 transition-colors ${
-        done ? 'border-abyss-800 bg-abyss-900/40' : 'border-abyss-700 bg-abyss-800/60'
+      className={`rounded-xl border p-3 transition-all duration-300 ${
+        flash === 'reward'
+          ? 'scale-[1.015] border-ember-400 bg-ember-500/10 shadow-[0_0_20px_rgba(251,191,36,0.25)]'
+          : flash === 'penalty'
+            ? 'border-vital-500 bg-vital-500/10'
+            : done
+              ? 'border-abyss-800 bg-abyss-900/40'
+              : 'border-abyss-700 bg-abyss-800/60'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -105,7 +123,10 @@ export function TaskCard({
               {task.polarity !== 'negative' && (
                 <button
                   type="button"
-                  onClick={() => onHabit('positive')}
+                  onClick={(clickEvent) => {
+                    withEffect(clickEvent.currentTarget, () => onHabit('positive'))
+                    pulse('reward')
+                  }}
                   aria-label={`${task.title} 좋은 습관 기록`}
                   className="rounded-lg bg-emerald-600/80 p-2 text-white hover:bg-emerald-500"
                 >
@@ -115,7 +136,10 @@ export function TaskCard({
               {task.polarity !== 'positive' && (
                 <button
                   type="button"
-                  onClick={() => onHabit('negative')}
+                  onClick={(clickEvent) => {
+                    withEffect(clickEvent.currentTarget, () => onHabit('negative'))
+                    pulse('penalty')
+                  }}
                   aria-label={`${task.title} 나쁜 습관 기록`}
                   className="rounded-lg bg-vital-500/80 p-2 text-white hover:bg-vital-400"
                 >
@@ -128,9 +152,9 @@ export function TaskCard({
           {task.type !== 'habit' && onComplete && !done && (
             <button
               type="button"
-              onClick={handleComplete}
+              onClick={(clickEvent) => handleComplete(clickEvent.currentTarget)}
               aria-label={`${task.title} 완료`}
-              className="rounded-lg bg-ember-500 p-2 text-abyss-950 hover:bg-ember-400"
+              className="rounded-lg bg-ember-500 p-2 text-abyss-950 transition-transform hover:bg-ember-400 active:scale-90"
             >
               <Check size={16} aria-hidden />
             </button>
@@ -169,7 +193,7 @@ export function TaskCard({
             value={metricInput}
             onChange={(changeEvent) => setMetricInput(changeEvent.target.value)}
             onKeyDown={(keyEvent) => {
-              if (keyEvent.key === 'Enter') handleComplete()
+              if (keyEvent.key === 'Enter') handleComplete(keyEvent.currentTarget)
             }}
             inputMode="decimal"
             placeholder={task.metric.target ? String(task.metric.target) : '0'}
@@ -179,7 +203,7 @@ export function TaskCard({
           <span className="text-xs text-slate-400">{task.metric.unit}</span>
           <button
             type="button"
-            onClick={handleComplete}
+            onClick={(clickEvent) => handleComplete(clickEvent.currentTarget)}
             className="ml-auto rounded-md bg-ember-500 px-3 py-1 text-xs font-semibold text-abyss-950"
           >
             기록하고 완료

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DIFFICULTY_TABLE } from '../data/gameConfig'
 import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { findCosmetic, findItem } from '../data/shopConfig'
+import { MAX_WEIGHT, WEIGHT_STEP } from '../data/workoutConfig'
 import { getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
@@ -306,6 +307,101 @@ describe('공부 과목과 회독', () => {
 
     expect(useGameStore.getState().subjects[0].archivedAt).toBeDefined()
     expect(useGameStore.getState().events).toHaveLength(1)
+  })
+})
+
+describe('운동 기록', () => {
+  it('종목을 추가하면 무게 0으로 시작한다', () => {
+    useGameStore.getState().addExercise('chest', '벤치프레스')
+    const exercise = useGameStore.getState().workout.exercises[0]
+    expect(exercise).toMatchObject({ group: 'chest', name: '벤치프레스', weight: 0, best: 0 })
+  })
+
+  it('같은 부위에 같은 이름은 중복으로 안 들어간다', () => {
+    useGameStore.getState().addExercise('chest', '벤치프레스')
+    useGameStore.getState().addExercise('chest', '벤치프레스')
+    expect(useGameStore.getState().workout.exercises).toHaveLength(1)
+  })
+
+  it('다른 부위에는 같은 이름을 쓸 수 있다', () => {
+    useGameStore.getState().addExercise('chest', '프레스')
+    useGameStore.getState().addExercise('shoulders', '프레스')
+    expect(useGameStore.getState().workout.exercises).toHaveLength(2)
+  })
+
+  it('빈 이름은 무시한다', () => {
+    useGameStore.getState().addExercise('back', '   ')
+    expect(useGameStore.getState().workout.exercises).toHaveLength(0)
+  })
+
+  it('+ 는 5kg씩 올리고 최고 기록을 갱신한다', () => {
+    useGameStore.getState().addExercise('legs', '스쿼트', 60)
+    const id = useGameStore.getState().workout.exercises[0].id
+
+    useGameStore.getState().adjustExerciseWeight(id, WEIGHT_STEP)
+    const exercise = useGameStore.getState().workout.exercises[0]
+    expect(exercise.weight).toBe(65)
+    expect(exercise.best).toBe(65)
+  })
+
+  it('− 로 내려도 최고 기록은 남는다', () => {
+    useGameStore.getState().addExercise('legs', '스쿼트', 100)
+    const id = useGameStore.getState().workout.exercises[0].id
+
+    useGameStore.getState().adjustExerciseWeight(id, -WEIGHT_STEP * 2)
+    const exercise = useGameStore.getState().workout.exercises[0]
+    expect(exercise.weight).toBe(90)
+    expect(exercise.best).toBe(100)
+  })
+
+  it('무게는 0 아래로 내려가지 않는다', () => {
+    useGameStore.getState().addExercise('back', '풀업', 5)
+    const id = useGameStore.getState().workout.exercises[0].id
+    useGameStore.getState().adjustExerciseWeight(id, -WEIGHT_STEP * 3)
+    expect(useGameStore.getState().workout.exercises[0].weight).toBe(0)
+  })
+
+  it('상한을 넘지 않는다', () => {
+    useGameStore.getState().addExercise('back', '데드리프트', MAX_WEIGHT)
+    const id = useGameStore.getState().workout.exercises[0].id
+    useGameStore.getState().adjustExerciseWeight(id, 100)
+    expect(useGameStore.getState().workout.exercises[0].weight).toBe(MAX_WEIGHT)
+  })
+
+  it('종목을 지울 수 있다', () => {
+    useGameStore.getState().addExercise('chest', '딥스')
+    const id = useGameStore.getState().workout.exercises[0].id
+    useGameStore.getState().removeExercise(id)
+    expect(useGameStore.getState().workout.exercises).toHaveLength(0)
+  })
+
+  it('3대 기록도 5kg씩 오르내리고 최고치를 기억한다', () => {
+    useGameStore.getState().adjustBigThree('bench', WEIGHT_STEP * 4)
+    expect(useGameStore.getState().workout.bigThree.bench).toBe(20)
+
+    useGameStore.getState().adjustBigThree('bench', -WEIGHT_STEP)
+    const workout = useGameStore.getState().workout
+    expect(workout.bigThree.bench).toBe(15)
+    expect(workout.bigThreeBest.bench).toBe(20)
+  })
+
+  it('3대 무게를 직접 입력할 수 있다', () => {
+    useGameStore.getState().setBigThree('deadlift', 140)
+    expect(useGameStore.getState().workout.bigThree.deadlift).toBe(140)
+    expect(useGameStore.getState().workout.bigThreeBest.deadlift).toBe(140)
+  })
+
+  it('이상한 값은 0으로 처리한다', () => {
+    useGameStore.getState().setBigThree('squat', Number.NaN)
+    expect(useGameStore.getState().workout.bigThree.squat).toBe(0)
+  })
+
+  it('운동 기록도 백업에 들어간다', () => {
+    useGameStore.getState().addExercise('chest', '벤치프레스', 80)
+    useGameStore.getState().setBigThree('bench', 80)
+    const saved = useGameStore.getState().exportSave()
+    expect(saved.workout.exercises).toHaveLength(1)
+    expect(saved.workout.bigThree.bench).toBe(80)
   })
 })
 

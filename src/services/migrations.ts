@@ -3,6 +3,7 @@ import { GACHA } from '../data/petConfig'
 import { addDays, getGameDate } from '../lib/date'
 import type { GameState } from '../types/gameState'
 import { SCHEMA_VERSION } from '../types/gameState'
+import { EMPTY_WORKOUT } from '../types/workout'
 
 /**
  * 저장 데이터를 현재 형식으로 올린다.
@@ -49,6 +50,11 @@ export function migrateSave(input: Partial<GameState>, version: number): GameSta
     state = { ...state, subjects: state.subjects ?? [] }
   }
 
+  // v5 -> v6: 운동 기록 추가.
+  if (version < 6) {
+    state = { ...state, workout: state.workout ?? EMPTY_WORKOUT }
+  }
+
   return withDefaults(state)
 }
 
@@ -68,6 +74,11 @@ export function withDefaults(state: Partial<GameState>): GameState {
     },
     tasks: state.tasks ?? [],
     subjects: state.subjects ?? [],
+    workout: {
+      bigThree: { ...EMPTY_WORKOUT.bigThree, ...state.workout?.bigThree },
+      bigThreeBest: { ...EMPTY_WORKOUT.bigThreeBest, ...state.workout?.bigThreeBest },
+      exercises: state.workout?.exercises ?? [],
+    },
     events: state.events ?? [],
     settlements: state.settlements ?? [],
     eggs: state.eggs ?? [],

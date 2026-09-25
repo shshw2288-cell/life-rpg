@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { FeedbackToasts } from '../components/feedback/FeedbackToasts'
+import { EffectLayer } from '../features/effects/EffectLayer'
 import { Sidebar } from '../components/layout/Sidebar'
 import { TopBar } from '../components/layout/TopBar'
 import { CharacterPage } from '../pages/CharacterPage'
@@ -11,6 +12,7 @@ import { PetsPage } from '../pages/PetsPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { ShopPage } from '../pages/ShopPage'
 import { StudyPage } from '../pages/StudyPage'
+import { WorkoutPage } from '../pages/WorkoutPage'
 import { TasksPage } from '../pages/TasksPage'
 import { useGameStore } from '../store/useGameStore'
 
@@ -35,6 +37,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/study" element={<StudyPage />} />
+              <Route path="/workout" element={<WorkoutPage />} />
               <Route path="/character" element={<CharacterPage />} />
               <Route path="/dungeon" element={<DungeonPage />} />
               <Route path="/shop" element={<ShopPage />} />
@@ -46,6 +49,7 @@ export default function App() {
           </main>
         </div>
         <FeedbackToasts />
+        <EffectLayer />
       </div>
     </HashRouter>
   )
