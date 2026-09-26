@@ -155,25 +155,73 @@ describe('던전', () => {
     expect(useGameStore.getState().towerKeys).toBe(STARTING_TOWER_KEYS)
   })
 
-  it('과제를 3개 완료하면 입장 기회가 1회 늘어난다', () => {
-    useGameStore.getState().enterDungeon()
-    useGameStore.getState().leaveBattle()
+  it('과제를 3개 완료하면 열쇠가 1개 쌓인다', () => {
+    useGameStore.setState({ towerKeys: 0, keyProgress: 0 })
 
     for (const title of ['a', 'b', 'c']) {
       const task = addDaily(title)
       useGameStore.getState().completeTask(task.id)
     }
 
-    useGameStore.getState().enterDungeon()
-    expect(useGameStore.getState().battle).not.toBeNull()
-    expect(useGameStore.getState().dungeonDay.entriesUsed).toBe(2)
+    expect(useGameStore.getState().towerKeys).toBe(1)
+    expect(useGameStore.getState().keyProgress).toBe(0)
   })
 
-  it('입장 기회가 없으면 입장 횟수가 늘지 않는다', () => {
+  it('열쇠는 날짜가 바뀌어도 사라지지 않고 계속 쌓인다', () => {
+    useGameStore.setState({ towerKeys: 0, keyProgress: 0 })
+    for (let index = 0; index < 9; index += 1) {
+      const task = addDaily(`t${index}`)
+      useGameStore.getState().completeTask(task.id)
+    }
+    expect(useGameStore.getState().towerKeys).toBe(3)
+
+    // 어제 날짜로 바꿔도 열쇠는 그대로다
+    useGameStore.setState({ dungeonDay: { date: addDays(today, -1), entriesUsed: 5 } })
+    expect(useGameStore.getState().towerKeys).toBe(3)
+  })
+
+  it('무료 입장을 쓴 뒤에는 열쇠로 들어간다', () => {
+    useGameStore.setState({ towerKeys: 1, keyProgress: 0 })
+
+    useGameStore.getState().enterDungeon() // 무료 입장
+    expect(useGameStore.getState().dungeonDay.entriesUsed).toBe(1)
+    expect(useGameStore.getState().towerKeys).toBe(1)
+
+    useGameStore.getState().leaveBattle()
+    useGameStore.getState().enterDungeon() // 열쇠 사용
+    expect(useGameStore.getState().battle).not.toBeNull()
+    expect(useGameStore.getState().towerKeys).toBe(0)
+  })
+
+  it('무료 입장도 열쇠도 없으면 들어갈 수 없다', () => {
+    useGameStore.setState({ towerKeys: 0, keyProgress: 0 })
     useGameStore.getState().enterDungeon()
     useGameStore.getState().leaveBattle()
     useGameStore.getState().enterDungeon()
+    expect(useGameStore.getState().battle).toBeNull()
+  })
+
+  it('열쇠가 많으면 하루에 몇 번이든 들어갈 수 있다', () => {
+    useGameStore.setState({ towerKeys: 5, keyProgress: 0 })
+    for (let index = 0; index < 6; index += 1) {
+      useGameStore.getState().enterDungeon()
+      expect(useGameStore.getState().battle).not.toBeNull()
+      useGameStore.getState().leaveBattle()
+    }
+    expect(useGameStore.getState().towerKeys).toBe(0)
     expect(useGameStore.getState().dungeonDay.entriesUsed).toBe(1)
+  })
+
+  it('이미 깬 층도 다시 들어갈 수 있다', () => {
+    useGameStore.setState({
+      tower: { highestCleared: 5, lastFloor: 5 },
+      towerKeys: 3,
+    })
+    for (const floor of [1, 3, 5]) {
+      useGameStore.getState().enterDungeon(floor)
+      expect(useGameStore.getState().battle?.floor).toBe(floor)
+      useGameStore.getState().leaveBattle()
+    }
   })
 
   it('전투 중에는 다시 입장해도 전투가 새로 시작되지 않는다', () => {

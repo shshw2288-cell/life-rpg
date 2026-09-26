@@ -83,13 +83,24 @@ describe('백업 가져오기 검사', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('v6 저장 데이터에는 탑의 열쇠 1개가 지급된다', () => {
-    const before = { ...sample, towerKeys: 2 }
-    const migrated = migrateSave(before, 6)
-    expect(migrated.towerKeys).toBe(3)
+  it('옛 저장 데이터에 열쇠와 Gold를 한 번만 지급한다', () => {
+    const before = { ...sample, towerKeys: 2, character: { ...sample.character, gold: 100 } }
 
-    // 이미 v7이면 다시 주지 않는다
-    expect(migrateSave(migrated, 7).towerKeys).toBe(3)
+    // v6 -> v8: v7의 열쇠 1개 + v8의 열쇠 2개, Gold 100
+    const migrated = migrateSave(before, 6)
+    expect(migrated.towerKeys).toBe(5)
+    expect(migrated.character.gold).toBe(200)
+
+    // 이미 최신이면 다시 주지 않는다
+    const again = migrateSave(migrated, SCHEMA_VERSION)
+    expect(again.towerKeys).toBe(5)
+    expect(again.character.gold).toBe(200)
+  })
+
+  it('v7 저장 데이터에는 v8 지급만 적용된다', () => {
+    const migrated = migrateSave({ ...sample, towerKeys: 1 }, 7)
+    expect(migrated.towerKeys).toBe(3)
+    expect(migrated.keyProgress).toBe(0)
   })
 
   it('옛 버전 백업은 현재 형식으로 올려서 받는다', () => {

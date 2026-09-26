@@ -51,6 +51,7 @@ export function DungeonPage() {
     battle,
     dungeonDay,
     towerKeys,
+    keyProgress,
     tower,
     events,
     character,
@@ -61,7 +62,12 @@ export function DungeonPage() {
   const today = getGameDate(new Date())
 
   const completionsToday = countCompletionsOn(events, today)
-  const entries = entryStatus({ today, day: dungeonDay, completionsToday })
+  const entries = entryStatus({
+    today,
+    day: dungeonDay,
+    towerKeys,
+    keyProgress,
+  })
   const bonus = petBonuses(activePetId)
   const baseStats = deriveCombatStats(character.level)
   const stats = deriveCombatStats(character.level, bonus.combat)
@@ -78,9 +84,9 @@ export function DungeonPage() {
     )
   }
 
-  // 도전할 수 있는 층 목록 (최근 8개층)
+  // 1층부터 다음 층까지 전부 나열한다. 깬 층도 다시 들어갈 수 있다.
   const floors: number[] = []
-  for (let floor = Math.max(1, nextFloor - 6); floor <= nextFloor + 1; floor += 1) {
+  for (let floor = 1; floor <= nextFloor; floor += 1) {
     floors.push(floor)
   }
 
@@ -95,11 +101,11 @@ export function DungeonPage() {
             <FloorPreview floor={nextFloor} canEnter={canEnter} onEnter={() => enterDungeon()} />
           </Panel>
 
-          <Panel title="층 선택">
+          <Panel title={`층 선택 (1 ~ ${nextFloor}층)`}>
             <p className="-mt-2 mb-3 text-xs text-slate-500">
-              이미 깬 층은 다시 도전해 Gold와 재료를 더 모을 수 있습니다.
+              이미 깬 층은 몇 번이든 다시 도전해 Gold와 재료를 더 모을 수 있습니다.
             </p>
-            <ul className="flex flex-col gap-1.5">
+            <ul className="flex max-h-80 flex-col gap-1.5 overflow-y-auto pr-1">
               {floors
                 .slice()
                 .reverse()
@@ -163,31 +169,51 @@ export function DungeonPage() {
             </dl>
           </Panel>
 
-          <Panel title="오늘의 입장">
+          <Panel title="입장">
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <dt className="text-slate-400">남은 횟수</dt>
-                <dd className="tabular-nums text-slate-100">
-                  {entries.remaining} / {entries.total}
-                </dd>
+                <dt className="text-slate-400">지금 들어갈 수 있는 횟수</dt>
+                <dd className="tabular-nums text-ember-400">{entries.remaining}회</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-slate-400">과제로 획득</dt>
-                <dd className="tabular-nums text-ember-400">+{entries.earned}회</dd>
+                <dt className="text-slate-400">오늘 무료 입장</dt>
+                <dd className="tabular-nums text-slate-200">{entries.freeLeft}회</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-400">탑의 열쇠</dt>
                 <dd className="tabular-nums text-slate-200">{towerKeys}개</dd>
               </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-400">오늘 완료한 과제</dt>
+                <dd className="tabular-nums text-slate-300">{completionsToday}개</dd>
+              </div>
             </dl>
-            <p className="mt-3 border-t border-abyss-700 pt-2 text-[11px] text-slate-500">
-              과제 {DUNGEON_ENTRY.completionsPerBonus}개마다 입장 기회 1회 (하루 최대{' '}
-              {DUNGEON_ENTRY.maxDaily}회, 오전 8시 초기화). 다 쓰면{' '}
-              <Link to="/shop" className="text-ember-400 underline underline-offset-2">
-                상점
-              </Link>
-              의 탑의 열쇠를 씁니다.
-            </p>
+
+            <div className="mt-3 border-t border-abyss-700 pt-2">
+              <div className="mb-1 flex justify-between text-[11px] text-slate-400">
+                <span>다음 열쇠까지</span>
+                <span className="tabular-nums">
+                  {DUNGEON_ENTRY.completionsPerKey - entries.completionsToNextKey} /{' '}
+                  {DUNGEON_ENTRY.completionsPerKey}
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-abyss-700">
+                <div
+                  className="h-full bg-ember-400"
+                  style={{
+                    width: `${((DUNGEON_ENTRY.completionsPerKey - entries.completionsToNextKey) / DUNGEON_ENTRY.completionsPerKey) * 100}%`,
+                  }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">
+                하루 입장 제한은 없습니다. 과제·할 일을 {DUNGEON_ENTRY.completionsPerKey}개 완료할
+                때마다 열쇠가 1개씩 쌓이고, 열쇠는 날짜가 바뀌어도 사라지지 않습니다.{' '}
+                <Link to="/shop" className="text-ember-400 underline underline-offset-2">
+                  상점
+                </Link>
+                에서도 살 수 있습니다.
+              </p>
+            </div>
           </Panel>
 
           <Panel title="전투 능력치">

@@ -4,55 +4,62 @@ import type { DungeonDay } from '../types/battle'
 import type { TaskEvent } from '../types/task'
 
 /**
- * 던전 입장 횟수 계산.
+ * 탑 입장 계산.
  *
- * 입장 기회는 게임 날짜(오전 8시 기준)마다 초기화된다.
- * 추가 기회는 '완료' 이벤트로만 쌓인다. 습관 기록(habit_positive)은 세지 않는데,
- * 습관은 하루에 몇 번이든 누를 수 있어 연타로 입장권을 무한정 만들 수 있기 때문이다.
- * 반복 과제와 할 일의 완료는 과제당 하루 한 번뿐이라 자연스럽게 상한이 생긴다.
+ * 하루 입장 횟수에는 상한이 없다.
+ *   - 무료 입장: 게임 날짜(오전 8시 기준)마다 1회
+ *   - 열쇠: 과제를 완료해 모으며, 날짜가 바뀌어도 사라지지 않고 쌓인다
+ *
+ * 열쇠는 '완료' 이벤트로만 쌓인다. 습관 기록은 하루에 몇 번이든 누를 수 있어
+ * 연타로 열쇠를 무한정 만들 수 있기 때문이다. 반복 과제와 할 일의 완료는
+ * 과제당 하루 한 번뿐이라 자연스럽게 속도가 제한된다.
  */
 export function countCompletionsOn(events: TaskEvent[], date: GameDate): number {
   return events.filter((event) => event.localDate === date && event.action === 'complete').length
 }
 
 export interface EntryStatus {
-  /** 오늘 쓸 수 있는 총 입장 횟수 */
-  total: number
-  used: number
+  /** 오늘 남은 무료 입장 */
+  freeLeft: number
+  /** 가진 열쇠 수 */
+  keys: number
+  /** 지금 들어갈 수 있는 총 횟수 */
   remaining: number
-  /** 기본 제공분 */
-  base: number
-  /** 과제 완료로 번 추가분 */
-  earned: number
-  /** 추가 1회까지 남은 완료 횟수 (더 받을 수 없으면 0) */
-  completionsToNext: number
+  /** 다음 열쇠까지 남은 과제 완료 수 */
+  completionsToNextKey: number
 }
 
 export function entryStatus(params: {
   today: GameDate
   day: DungeonDay
-  completionsToday: number
+  towerKeys: number
+  /** 다음 열쇠까지 쌓인 완료 횟수 */
+  keyProgress: number
 }): EntryStatus {
-  const { today, day, completionsToday } = params
-  // 날짜가 바뀌었으면 사용 횟수는 0부터 다시 센다.
-  const used = day.date === today ? day.entriesUsed : 0
-
-  const earnedRaw = Math.floor(completionsToday / DUNGEON_ENTRY.completionsPerBonus)
-  const total = Math.min(DUNGEON_ENTRY.maxDaily, DUNGEON_ENTRY.baseDaily + earnedRaw)
-  const earned = total - DUNGEON_ENTRY.baseDaily
-
-  const atMax = total >= DUNGEON_ENTRY.maxDaily
-  const completionsToNext = atMax
-    ? 0
-    : DUNGEON_ENTRY.completionsPerBonus - (completionsToday % DUNGEON_ENTRY.completionsPerBonus)
+  const { today, day, towerKeys, keyProgress } = params
+  // 날짜가 바뀌었으면 무료 입장을 다시 채운다
+  const usedToday = day.date === today ? day.entriesUsed : 0
+  const freeLeft = Math.max(0, DUNGEON_ENTRY.baseDaily - usedToday)
 
   return {
-    total,
-    used,
-    remaining: Math.max(0, total - used),
-    base: DUNGEON_ENTRY.baseDaily,
+    freeLeft,
+    keys: towerKeys,
+    remaining: freeLeft + towerKeys,
+    completionsToNextKey: Math.max(1, DUNGEON_ENTRY.completionsPerKey - keyProgress),
+  }
+}
+
+/** 과제 완료를 열쇠 적립에 반영한다. 순수 함수. */
+export function addKeyProgress(
+  keyProgress: number,
+  towerKeys: number,
+): { keyProgress: number; towerKeys: number; earned: number } {
+  const next = keyProgress + 1
+  const earned = Math.floor(next / DUNGEON_ENTRY.completionsPerKey)
+  return {
+    keyProgress: next % DUNGEON_ENTRY.completionsPerKey,
+    towerKeys: towerKeys + earned,
     earned,
-    completionsToNext,
   }
 }
 

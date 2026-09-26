@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACTIONS, DUNGEON_ENTRY } from '../data/battleConfig'
 import type { TaskEvent } from '../types/task'
 import { calcRewards, createBattle, deriveCombatStats, takeTurn } from './combat'
-import { countCompletionsOn, entryStatus, rollOverDay } from './dungeon'
+import { addKeyProgress, countCompletionsOn, entryStatus, rollOverDay } from './dungeon'
 import { monsterForFloor } from './tower'
 
 const monster = monsterForFloor(1)
@@ -143,25 +143,47 @@ describe('던전 입장 횟수', () => {
     }
   }
 
-  it('기본 입장 횟수는 하루 1회다', () => {
-    const status = entryStatus({ today: '2025-09-25', day, completionsToday: 0 })
-    expect(status.total).toBe(DUNGEON_ENTRY.baseDaily)
+  it('무료 입장은 하루 1회다', () => {
+    const status = entryStatus({ today: '2025-09-25', day, towerKeys: 0, keyProgress: 0 })
+    expect(status.freeLeft).toBe(DUNGEON_ENTRY.baseDaily)
     expect(status.remaining).toBe(1)
   })
 
-  it('과제를 완료하면 입장 기회가 늘어난다', () => {
-    const status = entryStatus({ today: '2025-09-25', day, completionsToday: 3 })
-    expect(status.total).toBe(2)
-    expect(status.earned).toBe(1)
+  it('열쇠를 가지고 있으면 그만큼 더 들어갈 수 있다', () => {
+    const status = entryStatus({ today: '2025-09-25', day, towerKeys: 5, keyProgress: 0 })
+    expect(status.remaining).toBe(6)
   })
 
-  it('하루 최대 횟수를 넘지 않는다', () => {
-    const status = entryStatus({ today: '2025-09-25', day, completionsToday: 99 })
-    expect(status.total).toBe(DUNGEON_ENTRY.maxDaily)
-    expect(status.completionsToNext).toBe(0)
+  it('하루 입장 횟수에 상한이 없다', () => {
+    const used = { date: '2025-09-25', entriesUsed: 12 }
+    const status = entryStatus({ today: '2025-09-25', day: used, towerKeys: 40, keyProgress: 0 })
+    expect(status.freeLeft).toBe(0)
+    expect(status.remaining).toBe(40)
   })
 
-  it('습관 기록은 입장 기회로 세지 않는다', () => {
+  it('과제를 완료하면 열쇠가 쌓인다', () => {
+    let keys = { keyProgress: 0, towerKeys: 0, earned: 0 }
+    for (let i = 0; i < DUNGEON_ENTRY.completionsPerKey; i += 1) {
+      keys = addKeyProgress(keys.keyProgress, keys.towerKeys)
+    }
+    expect(keys.towerKeys).toBe(1)
+    expect(keys.keyProgress).toBe(0)
+  })
+
+  it('열쇠는 계속 쌓인다 (상한 없음)', () => {
+    let keys = { keyProgress: 0, towerKeys: 0, earned: 0 }
+    for (let i = 0; i < DUNGEON_ENTRY.completionsPerKey * 7; i += 1) {
+      keys = addKeyProgress(keys.keyProgress, keys.towerKeys)
+    }
+    expect(keys.towerKeys).toBe(7)
+  })
+
+  it('다음 열쇠까지 남은 개수를 알려준다', () => {
+    const status = entryStatus({ today: '2025-09-25', day, towerKeys: 0, keyProgress: 1 })
+    expect(status.completionsToNextKey).toBe(DUNGEON_ENTRY.completionsPerKey - 1)
+  })
+
+  it('습관 기록은 열쇠 적립으로 세지 않는다', () => {
     const events: TaskEvent[] = [
       completion('2025-09-25'),
       { ...completion('2025-09-25'), action: 'habit_positive' },
@@ -171,17 +193,17 @@ describe('던전 입장 횟수', () => {
     expect(countCompletionsOn(events, '2025-09-25')).toBe(1)
   })
 
-  it('날짜가 바뀌면 사용 횟수가 0으로 초기화된다', () => {
+  it('날짜가 바뀌면 무료 입장이 다시 찬다', () => {
     const used = { date: '2025-09-24', entriesUsed: 3 }
-    const status = entryStatus({ today: '2025-09-25', day: used, completionsToday: 0 })
-    expect(status.used).toBe(0)
-    expect(status.remaining).toBe(1)
+    const status = entryStatus({ today: '2025-09-25', day: used, towerKeys: 0, keyProgress: 0 })
+    expect(status.freeLeft).toBe(1)
     expect(rollOverDay(used, '2025-09-25')).toEqual({ date: '2025-09-25', entriesUsed: 0 })
   })
 
-  it('같은 날이면 사용 횟수를 유지한다', () => {
+  it('같은 날 무료 입장을 쓰면 열쇠가 필요하다', () => {
     const used = { date: '2025-09-25', entriesUsed: 1 }
     expect(rollOverDay(used, '2025-09-25')).toBe(used)
-    expect(entryStatus({ today: '2025-09-25', day: used, completionsToday: 0 }).remaining).toBe(0)
+    const status = entryStatus({ today: '2025-09-25', day: used, towerKeys: 0, keyProgress: 0 })
+    expect(status.remaining).toBe(0)
   })
 })

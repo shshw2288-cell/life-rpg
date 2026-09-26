@@ -12,7 +12,7 @@ import {
   useItemTurn,
 } from '../engine/combat'
 import { canChallenge, firstClearBonus, monsterForFloor } from '../engine/tower'
-import { countCompletionsOn, entryStatus, rollOverDay } from '../engine/dungeon'
+import { addKeyProgress, entryStatus, rollOverDay } from '../engine/dungeon'
 import { countHabitEvents } from '../engine/ledger'
 import { applyExp } from '../engine/leveling'
 import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/pets'
@@ -134,6 +134,7 @@ function initialState(): GameState {
     materials: {},
     dungeonDay: { date: today, entriesUsed: 0 },
     towerKeys: STARTING_TOWER_KEYS,
+    keyProgress: 0,
     tower: { highestCleared: 0, lastFloor: 1 },
     battle: null,
     inventory: {},
@@ -269,6 +270,8 @@ export const useGameStore = create<GameStore>()(
           rng: Math.random,
           newId,
         })
+        // 과제를 완료할수록 탑의 열쇠가 쌓인다 (날짜가 바뀌어도 사라지지 않음)
+        const keys = addKeyProgress(state.keyProgress, state.towerKeys)
 
         const feedback: FeedbackItem[] = [
           {
@@ -284,6 +287,14 @@ export const useGameStore = create<GameStore>()(
           ...applied.feedback,
         ]
         feedback.push(...petFeedback(petResult.newEgg, petResult.hatched))
+        if (keys.earned > 0) {
+          feedback.push({
+            id: newId(),
+            kind: 'reward',
+            title: `탑의 열쇠 +${keys.earned}`,
+            detail: '탑에 한 번 더 들어갈 수 있습니다.',
+          })
+        }
 
         set({
           character: {
@@ -295,6 +306,8 @@ export const useGameStore = create<GameStore>()(
           eggs: petResult.eggs,
           pets: petResult.pets,
           petTickets: state.petTickets + petResult.ticketsGained,
+          towerKeys: keys.towerKeys,
+          keyProgress: keys.keyProgress,
           // 첫 펫이면 자동으로 동행 지정
           activePetId: state.activePetId ?? petResult.hatched?.speciesId ?? null,
           tasks:
@@ -470,12 +483,13 @@ export const useGameStore = create<GameStore>()(
         const status = entryStatus({
           today,
           day,
-          completionsToday: countCompletionsOn(state.events, today),
+          towerKeys: state.towerKeys,
+          keyProgress: state.keyProgress,
         })
+        if (status.remaining <= 0) return
 
-        // 하루 입장 횟수를 먼저 쓰고, 다 썼으면 상점에서 산 열쇠를 쓴다
-        const useKey = status.remaining <= 0
-        if (useKey && state.towerKeys <= 0) return
+        // 오늘 무료 입장을 먼저 쓰고, 다 썼으면 열쇠를 쓴다
+        const useKey = status.freeLeft <= 0
 
         // 새 전투를 시작하기 전에 이전 연출을 정리한다
         useBattleAnimStore.getState().reset()
@@ -880,6 +894,7 @@ export const useGameStore = create<GameStore>()(
           materials: state.materials,
           dungeonDay: state.dungeonDay,
           towerKeys: state.towerKeys,
+          keyProgress: state.keyProgress,
           tower: state.tower,
           battle: state.battle,
           inventory: state.inventory,
@@ -911,6 +926,7 @@ export const useGameStore = create<GameStore>()(
         materials: state.materials,
         dungeonDay: state.dungeonDay,
         towerKeys: state.towerKeys,
+        keyProgress: state.keyProgress,
         tower: state.tower,
         battle: state.battle,
         inventory: state.inventory,

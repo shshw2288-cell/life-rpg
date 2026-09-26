@@ -43,8 +43,10 @@ export interface GameState {
   materials: Record<string, number>
   /** 오늘의 던전 입장 현황 */
   dungeonDay: DungeonDay
-  /** 상점에서 산 추가 입장권. 하루 제한과 별개로 쌓인다. */
+  /** 탑의 열쇠. 과제 완료와 상점 구매로 모으며 날짜가 바뀌어도 사라지지 않는다. */
   towerKeys: number
+  /** 다음 열쇠까지 쌓인 과제 완료 수 */
+  keyProgress: number
   /** 탑 진행 상황 */
   tower: TowerProgress
   /** 진행 중이거나 방금 끝난 전투. 없으면 null */
@@ -70,5 +72,6 @@ export interface GameState {
  * 5: 공부 과목(subjects) 추가
  * 6: 운동 기록(workout) 추가
  * 7: 탑의 열쇠 1개 지급 (한 번만)
+ * 8: 입장 제한 폐지 + 열쇠 적립(keyProgress), 100 Gold·열쇠 2개 지급 (한 번만)
  */
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8

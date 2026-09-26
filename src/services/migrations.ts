@@ -61,6 +61,18 @@ export function migrateSave(input: Partial<GameState>, version: number): GameSta
     state = { ...state, towerKeys: (state.towerKeys ?? 0) + STARTING_TOWER_KEYS }
   }
 
+  // v7 -> v8: 입장 제한 폐지. 열쇠 적립칸을 만들고 100 Gold와 열쇠 2개를 지급한다.
+  if (version < 8) {
+    state = {
+      ...state,
+      keyProgress: state.keyProgress ?? 0,
+      towerKeys: (state.towerKeys ?? 0) + 2,
+      character: state.character
+        ? { ...state.character, gold: (state.character.gold ?? 0) + 100 }
+        : state.character,
+    }
+  }
+
   return withDefaults(state)
 }
 
@@ -94,6 +106,7 @@ export function withDefaults(state: Partial<GameState>): GameState {
     materials: state.materials ?? {},
     dungeonDay: state.dungeonDay ?? { date: today, entriesUsed: 0 },
     towerKeys: state.towerKeys ?? STARTING_TOWER_KEYS,
+    keyProgress: state.keyProgress ?? 0,
     tower: state.tower ?? { highestCleared: 0, lastFloor: 1 },
     battle: state.battle ?? null,
     inventory: state.inventory ?? {},
