@@ -18,6 +18,7 @@ import { applyExp } from '../engine/leveling'
 import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/pets'
 import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../engine/rewards'
 import { planSettlement } from '../engine/schedule'
+import { staleCompletedTodos } from '../engine/tasks'
 import { countRoundsOn, justReachedTarget, roundReward } from '../engine/study'
 import { migrateSave } from '../services/migrations'
 import { STUDY } from '../data/studyConfig'
@@ -60,6 +61,8 @@ interface GameStore extends GameState {
   completeTask: (id: string, metricValue?: number) => void
   recordHabit: (id: string, polarity: 'positive' | 'negative') => void
   runSettlement: () => void
+  /** 하루가 지난 완료 할 일을 목록에서 내린다 (기록에는 남는다) */
+  archiveStaleTodos: () => void
   dismissFeedback: (id: string) => void
   resetAll: () => void
   /** 탑 도전. 남은 입장 횟수가 없거나 잠긴 층이면 아무 일도 하지 않는다. */
@@ -429,6 +432,21 @@ export const useGameStore = create<GameStore>()(
           settlements: [...state.settlements, ...newSettlements],
           meta: { ...state.meta, lastSettledDate: addDays(today, -1), updatedAt: now },
           feedback: [...state.feedback, ...feedback, ...applied.feedback],
+        })
+      },
+
+      archiveStaleTodos: () => {
+        const state = get()
+        const today = getGameDate(new Date())
+        const stale = staleCompletedTodos(state.tasks, today)
+        if (stale.length === 0) return
+
+        const staleIds = new Set(stale.map((task) => task.id))
+        const now = new Date().toISOString()
+        set({
+          tasks: state.tasks.map((task) =>
+            staleIds.has(task.id) ? { ...task, archivedAt: now } : task,
+          ),
         })
       },
 

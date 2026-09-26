@@ -4,6 +4,7 @@ import { EmptyState, PageShell, Panel } from '../components/layout/PageShell'
 import { TaskCard } from '../features/tasks/TaskCard'
 import { TaskFormModal } from '../features/tasks/TaskFormModal'
 import { countHabitEvents, hasCompletedOn } from '../engine/ledger'
+import { isStaleCompletedTodo } from '../engine/tasks'
 import { getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
 import type { Task, TaskType } from '../types/task'
@@ -27,7 +28,8 @@ export function TasksPage() {
   const [confirmDelete, setConfirmDelete] = useState<Task | undefined>()
 
   const today = getGameDate(new Date())
-  const active = tasks.filter((task) => !task.archivedAt)
+  // 하루가 지나 정리된 할 일은 목록에서 빠진다. 오늘 끝낸 것만 남는다.
+  const active = tasks.filter((task) => !task.archivedAt && !isStaleCompletedTodo(task, today))
 
   const openCreate = (type: TaskType) => {
     setEditing(undefined)
@@ -42,7 +44,16 @@ export function TasksPage() {
           const items = active.filter((task) => task.type === section.type)
           return (
             <Panel key={section.type} title={`${section.title} (${items.length})`}>
-              <p className="-mt-2 mb-3 text-xs text-slate-500">{section.hint}</p>
+              <p className="-mt-2 mb-3 text-xs text-slate-500">
+                {section.hint}
+                {section.type === 'todo' && (
+                  <>
+                    {' · '}
+                    완료한 할 일은 다음 날(오전 8시)이 되면 목록에서 사라집니다. 기록 화면에는
+                    그대로 남습니다.
+                  </>
+                )}
+              </p>
 
               <div className="flex flex-col gap-2">
                 {items.length === 0 ? (

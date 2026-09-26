@@ -3,7 +3,7 @@ import { DIFFICULTY_TABLE } from '../data/gameConfig'
 import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { findCosmetic, findItem } from '../data/shopConfig'
 import { MAX_WEIGHT, WEIGHT_STEP } from '../data/workoutConfig'
-import { getGameDate } from '../lib/date'
+import { addDays, getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
 const memory = new Map<string, string>()
@@ -236,6 +236,63 @@ describe('던전', () => {
     useGameStore.getState().enterDungeon()
     expect(useGameStore.getState().battle).not.toBeNull()
     expect(useGameStore.getState().dungeonDay).toEqual({ date: today, entriesUsed: 1 })
+  })
+})
+
+describe('완료한 할 일 자동 정리', () => {
+  it('오늘 완료한 할 일은 목록에 남는다', () => {
+    useGameStore.getState().addTask({ type: 'todo', title: '보고서', difficulty: 2 })
+    const task = useGameStore.getState().tasks[0]
+    useGameStore.getState().completeTask(task.id)
+
+    useGameStore.getState().archiveStaleTodos()
+    expect(useGameStore.getState().tasks[0].archivedAt).toBeUndefined()
+  })
+
+  it('어제 완료한 할 일은 목록에서 내려간다', () => {
+    useGameStore.getState().addTask({ type: 'todo', title: '지난 보고서', difficulty: 2 })
+    const task = useGameStore.getState().tasks[0]
+    useGameStore.getState().completeTask(task.id)
+
+    // 완료 날짜를 어제로 바꿔 하루가 지난 상황을 만든다
+    useGameStore.setState({
+      tasks: useGameStore.getState().tasks.map((item) =>
+        item.id === task.id ? { ...item, completedOn: addDays(today, -1) } : item,
+      ),
+    })
+    useGameStore.getState().archiveStaleTodos()
+
+    expect(useGameStore.getState().tasks[0].archivedAt).toBeDefined()
+  })
+
+  it('끝내지 않은 할 일은 며칠이 지나도 남는다', () => {
+    useGameStore.getState().addTask({ type: 'todo', title: '미룬 일', difficulty: 2 })
+    useGameStore.getState().archiveStaleTodos()
+    expect(useGameStore.getState().tasks[0].archivedAt).toBeUndefined()
+  })
+
+  it('반복 과제는 정리 대상이 아니다', () => {
+    useGameStore.getState().addTask({ type: 'daily', title: '운동', difficulty: 3, repeatDays: [] })
+    const task = useGameStore.getState().tasks[0]
+    useGameStore.getState().completeTask(task.id)
+    useGameStore.getState().archiveStaleTodos()
+    expect(useGameStore.getState().tasks[0].archivedAt).toBeUndefined()
+  })
+
+  it('정리해도 기록은 남는다', () => {
+    useGameStore.getState().addTask({ type: 'todo', title: '지난 일', difficulty: 2 })
+    const task = useGameStore.getState().tasks[0]
+    useGameStore.getState().completeTask(task.id)
+    useGameStore.setState({
+      tasks: useGameStore.getState().tasks.map((item) => ({
+        ...item,
+        completedOn: addDays(today, -3),
+      })),
+    })
+    useGameStore.getState().archiveStaleTodos()
+
+    expect(useGameStore.getState().events).toHaveLength(1)
+    expect(useGameStore.getState().tasks[0].title).toBe('지난 일')
   })
 })
 

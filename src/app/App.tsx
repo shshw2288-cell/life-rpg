@@ -18,13 +18,20 @@ import { useGameStore } from '../store/useGameStore'
 
 export default function App() {
   const runSettlement = useGameStore((state) => state.runSettlement)
+  const archiveStaleTodos = useGameStore((state) => state.archiveStaleTodos)
 
-  // 앱을 열 때, 그리고 오전 8시를 넘길 때 놓친 반복 과제를 한 번만 정산한다.
+  // 앱을 열 때, 그리고 오전 8시를 넘길 때
+  // 1) 놓친 반복 과제를 한 번만 정산하고
+  // 2) 하루가 지난 완료 할 일을 목록에서 내린다.
   useEffect(() => {
-    runSettlement()
-    const timer = setInterval(runSettlement, 60_000)
+    const tick = () => {
+      runSettlement()
+      archiveStaleTodos()
+    }
+    tick()
+    const timer = setInterval(tick, 60_000)
     return () => clearInterval(timer)
-  }, [runSettlement])
+  }, [runSettlement, archiveStaleTodos])
 
   return (
     <HashRouter>
