@@ -68,7 +68,7 @@ export const SHOP_ITEMS: ShopItem[] = [
     id: 'tower_key',
     name: '탑의 열쇠',
     description: '오늘 탑에 한 번 더 들어갈 수 있다. 하루 제한과 별개로 쌓인다.',
-    price: 120,
+    price: 60,
     effect: { kind: 'entry' },
     usableInBattle: false,
     icon: 'key',

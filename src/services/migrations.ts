@@ -1,3 +1,4 @@
+import { STARTING_TOWER_KEYS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS } from '../data/gameConfig'
 import { GACHA } from '../data/petConfig'
 import { addDays, getGameDate } from '../lib/date'
@@ -55,6 +56,11 @@ export function migrateSave(input: Partial<GameState>, version: number): GameSta
     state = { ...state, workout: state.workout ?? EMPTY_WORKOUT }
   }
 
+  // v6 -> v7: 탑의 열쇠 1개 지급. 버전으로 한 번만 실행되므로 중복 지급되지 않는다.
+  if (version < 7) {
+    state = { ...state, towerKeys: (state.towerKeys ?? 0) + STARTING_TOWER_KEYS }
+  }
+
   return withDefaults(state)
 }
 
@@ -87,7 +93,7 @@ export function withDefaults(state: Partial<GameState>): GameState {
     petTickets: state.petTickets ?? GACHA.startingTickets,
     materials: state.materials ?? {},
     dungeonDay: state.dungeonDay ?? { date: today, entriesUsed: 0 },
-    towerKeys: state.towerKeys ?? 0,
+    towerKeys: state.towerKeys ?? STARTING_TOWER_KEYS,
     tower: state.tower ?? { highestCleared: 0, lastFloor: 1 },
     battle: state.battle ?? null,
     inventory: state.inventory ?? {},

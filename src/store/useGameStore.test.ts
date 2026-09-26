@@ -3,6 +3,7 @@ import { DIFFICULTY_TABLE } from '../data/gameConfig'
 import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { findCosmetic, findItem } from '../data/shopConfig'
 import { MAX_WEIGHT, WEIGHT_STEP } from '../data/workoutConfig'
+import { STARTING_TOWER_KEYS } from '../data/battleConfig'
 import { useBattleAnimStore } from '../features/dungeon/battleAnimStore'
 import { addDays, getGameDate } from '../lib/date'
 
@@ -138,6 +139,9 @@ describe('던전', () => {
   }
 
   it('기본 입장 1회를 쓰면 더 들어갈 수 없다', () => {
+    // 시작 지급된 열쇠를 비워 하루 제한만 남긴다
+    useGameStore.setState({ towerKeys: 0 })
+
     useGameStore.getState().enterDungeon()
     expect(useGameStore.getState().battle).not.toBeNull()
     expect(useGameStore.getState().dungeonDay.entriesUsed).toBe(1)
@@ -145,6 +149,10 @@ describe('던전', () => {
     useGameStore.getState().leaveBattle()
     useGameStore.getState().enterDungeon()
     expect(useGameStore.getState().battle).toBeNull() // 남은 횟수 없음
+  })
+
+  it('처음 시작할 때 탑의 열쇠 1개를 준다', () => {
+    expect(useGameStore.getState().towerKeys).toBe(STARTING_TOWER_KEYS)
   })
 
   it('과제를 3개 완료하면 입장 기회가 1회 늘어난다', () => {
@@ -585,7 +593,10 @@ describe('탑과 상점', () => {
   })
 
   it('탑의 열쇠와 뽑기권은 각자의 칸으로 들어간다', () => {
-    useGameStore.setState({ character: { ...useGameStore.getState().character, gold: 10000 } })
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, gold: 10000 },
+      towerKeys: 0,
+    })
     useGameStore.getState().buyShopItem('tower_key')
     useGameStore.getState().buyShopItem('gacha_ticket')
     expect(useGameStore.getState().towerKeys).toBe(1)

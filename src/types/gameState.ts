@@ -69,5 +69,6 @@ export interface GameState {
  * 4: 탑·상점(tower, towerKeys, inventory, cosmetics) 추가
  * 5: 공부 과목(subjects) 추가
  * 6: 운동 기록(workout) 추가
+ * 7: 탑의 열쇠 1개 지급 (한 번만)
  */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7

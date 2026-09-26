@@ -48,6 +48,9 @@ export const ACTIONS = {
 export const MONSTER_HEAVY_TURN_INTERVAL = 3
 export const MONSTER_HEAVY_MULTIPLIER = 1.7
 
+/** 처음 시작할 때 주는 탑의 열쇠 (하루 제한과 별개로 쓰는 추가 입장권) */
+export const STARTING_TOWER_KEYS = 1
+
 /** 하루 던전 입장 규칙 */
 export const DUNGEON_ENTRY = {
   /** 게임 날짜마다 기본으로 주어지는 입장 횟수 */

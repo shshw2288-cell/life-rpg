@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SCHEMA_VERSION } from '../types/gameState'
 import { backupFileName, createBackup, parseBackup } from './backup'
-import { withDefaults } from './migrations'
+import { migrateSave, withDefaults } from './migrations'
 
 const sample = withDefaults({
   character: { level: 7, exp: 20, hp: 30, maxHp: 50, gold: 900 },
@@ -81,6 +81,15 @@ describe('백업 가져오기 검사', () => {
       }),
     )
     expect(result.ok).toBe(false)
+  })
+
+  it('v6 저장 데이터에는 탑의 열쇠 1개가 지급된다', () => {
+    const before = { ...sample, towerKeys: 2 }
+    const migrated = migrateSave(before, 6)
+    expect(migrated.towerKeys).toBe(3)
+
+    // 이미 v7이면 다시 주지 않는다
+    expect(migrateSave(migrated, 7).towerKeys).toBe(3)
   })
 
   it('옛 버전 백업은 현재 형식으로 올려서 받는다', () => {

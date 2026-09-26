@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { MATERIALS } from '../data/battleConfig'
+import { MATERIALS, STARTING_TOWER_KEYS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS, DEATH_PENALTY, HISTORY_RETENTION_DAYS } from '../data/gameConfig'
 import { GACHA, GRADES } from '../data/petConfig'
 import { findCosmetic, findItem, type CosmeticSlot } from '../data/shopConfig'
@@ -133,7 +133,7 @@ function initialState(): GameState {
     petTickets: GACHA.startingTickets,
     materials: {},
     dungeonDay: { date: today, entriesUsed: 0 },
-    towerKeys: 0,
+    towerKeys: STARTING_TOWER_KEYS,
     tower: { highestCleared: 0, lastFloor: 1 },
     battle: null,
     inventory: {},
