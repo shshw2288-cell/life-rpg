@@ -1,12 +1,35 @@
-import { AlertTriangle, FlaskConical, Shield, Sparkles, Swords } from 'lucide-react'
+import {
+  AlertTriangle,
+  Crosshair,
+  FlaskConical,
+  Leaf,
+  Link2,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  Swords,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { ACTIONS, MATERIALS } from '../../data/battleConfig'
+import { ACTIONS, MATERIALS, STATUS_INFO } from '../../data/battleConfig'
+import { findSpecies } from '../../data/petConfig'
+import { ROLE_INFO } from '../../data/petRoleConfig'
 import { SHOP_ITEMS } from '../../data/shopConfig'
 import { stageForLevel } from '../../engine/evolution'
+import { skillAvailability } from '../../engine/skills'
 import { useGameStore } from '../../store/useGameStore'
-import type { BattleState } from '../../types/battle'
+import type { BattleState, StatusEffect } from '../../types/battle'
+import type { SkillIcon } from '../../types/skill'
+import { PetSprite } from '../pets/PetSprite'
 import { useBattleAnimStore } from './battleAnimStore'
 import { BattleStage } from './BattleStage'
+
+const SKILL_ICON: Record<SkillIcon, typeof Sparkles> = {
+  arrow: Sparkles,
+  sprout: Leaf,
+  shield: ShieldCheck,
+  focus: Crosshair,
+  vine: Link2,
+}
 
 function StatBar({
   label,
@@ -49,6 +72,31 @@ function StatBar({
   )
 }
 
+/** 걸려 있는 상태와 남은 턴 */
+function StatusChips({ statuses }: { statuses: StatusEffect[] }) {
+  if (statuses.length === 0) return null
+  return (
+    <ul className="mt-2 flex flex-wrap gap-1.5">
+      {statuses.map((status) => {
+        const info = STATUS_INFO[status.id]
+        return (
+          <li
+            key={status.id}
+            title={info.describe(status.value)}
+            className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${
+              info.tone === 'good'
+                ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-300'
+                : 'border-rose-500/60 bg-rose-500/15 text-rose-300'
+            }`}
+          >
+            {info.label} {status.turns}턴
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export function BattleView({ battle }: { battle: BattleState }) {
   const level = useGameStore((state) => state.character.level)
   const inventory = useGameStore((state) => state.inventory)
@@ -67,9 +115,10 @@ export function BattleView({ battle }: { battle: BattleState }) {
   )
   const hasRevive = (inventory.revive_charm ?? 0) > 0
   const finished = battle.status !== 'active'
-  const canUseSkill = battle.player.mp >= ACTIONS.skill.mpCost
   // 연출이 도는 동안에는 버튼을 잠근다
   const locked = playing || finished
+  const skills = skillAvailability(battle)
+  const petSpecies = battle.pet ? findSpecies(battle.pet.speciesId) : undefined
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
@@ -92,6 +141,7 @@ export function BattleView({ battle }: { battle: BattleState }) {
             <StatBar label="HP" current={battle.player.hp} max={battle.player.maxHp} tone="hp" />
             <StatBar label="MP" current={battle.player.mp} max={battle.player.maxMp} tone="mp" />
           </div>
+          <StatusChips statuses={battle.playerStatuses} />
           {hasRevive && (
             <p className="mt-2 text-[11px] text-emerald-400">
               부활의 부적 대기 중 — 쓰러질 때 자동으로 사용됩니다
@@ -117,17 +167,62 @@ export function BattleView({ battle }: { battle: BattleState }) {
           <p className="mt-2 text-[11px] text-slate-500">
             공격 {monster.attack} · 방어 {monster.defense}
           </p>
+          <StatusChips statuses={battle.monsterStatuses} />
         </div>
       </div>
 
-      {/* 강공격 예고 */}
-      {battle.monsterCharging && !finished && (
-        <div className="flex items-center gap-2 rounded-xl border-2 border-amber-500/70 bg-amber-500/15 px-3 py-2">
-          <AlertTriangle size={18} className="shrink-0 text-amber-400" aria-hidden />
-          <p className="text-sm font-bold text-amber-300">
-            {monster.name}이(가) 기운을 모으고 있습니다 — 다음 턴 강공격!
-            <span className="ml-1 font-normal text-amber-200/80">방어를 고려하세요.</span>
-          </p>
+      {/* 다음 행동 예고 — 행동을 고르기 전에 볼 수 있어야 한다 */}
+      {battle.intent && !finished && (
+        <div
+          className={`flex items-start gap-2 rounded-xl border-2 px-3 py-2 ${
+            battle.intent.dangerous
+              ? 'border-amber-500/70 bg-amber-500/15'
+              : 'border-abyss-700 bg-abyss-900/80'
+          }`}
+        >
+          <AlertTriangle
+            size={18}
+            aria-hidden
+            className={`mt-0.5 shrink-0 ${battle.intent.dangerous ? 'text-amber-400' : 'text-slate-500'}`}
+          />
+          <div className="min-w-0">
+            <p
+              className={`text-sm font-bold ${battle.intent.dangerous ? 'text-amber-300' : 'text-slate-200'}`}
+            >
+              다음 행동: {battle.intent.intent}
+            </p>
+            {battle.intent.hint && (
+              <p className="mt-0.5 text-xs text-amber-200/80">{battle.intent.hint}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 동행 펫 */}
+      {petSpecies && battle.pet && (
+        <div className="flex items-center gap-3 rounded-xl border border-abyss-700 bg-abyss-900/80 px-3 py-2">
+          <PetSprite species={petSpecies} size={40} />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-slate-200">
+              {petSpecies.name}
+              <span
+                className="ml-1.5 rounded px-1 py-0.5 text-[10px]"
+                style={{
+                  color: ROLE_INFO[battle.pet.role].color,
+                  backgroundColor: `${ROLE_INFO[battle.pet.role].color}22`,
+                }}
+              >
+                {ROLE_INFO[battle.pet.role].label}
+              </span>
+            </p>
+            <p className="truncate text-[11px] text-slate-400">
+              {battle.pet.abilityName} · {ROLE_INFO[battle.pet.role].summary}
+            </p>
+          </div>
+          <div className="shrink-0 text-right text-[11px] tabular-nums text-slate-400">
+            <p>남은 {battle.pet.usesLeft}회</p>
+            {battle.pet.cooldown > 0 && <p className="text-slate-500">대기 {battle.pet.cooldown}턴</p>}
+          </div>
         </div>
       )}
 
@@ -169,12 +264,13 @@ export function BattleView({ battle }: { battle: BattleState }) {
               onClick={leaveBattle}
               className="w-fit rounded-xl bg-ember-500 px-5 py-2.5 text-sm font-bold text-abyss-950 transition-transform hover:bg-ember-400 active:scale-95"
             >
-              탑 입구로
+              지역으로 돌아가기
             </button>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {/* 기본 행동 — 슬롯을 쓰지 않는다 */}
+            <div className="grid grid-cols-2 gap-2">
               <ActionButton
                 icon={<Swords size={20} aria-hidden />}
                 label="공격"
@@ -193,15 +289,49 @@ export function BattleView({ battle }: { battle: BattleState }) {
                 disabled={locked}
                 disabledHint={playing ? '연출 중…' : undefined}
               />
-              <ActionButton
-                icon={<Sparkles size={20} aria-hidden />}
-                label={ACTIONS.skill.name}
-                hint={`MP ${ACTIONS.skill.mpCost} 소비 · 강한 피해`}
-                tone="skill"
-                onClick={() => battleAction('skill')}
-                disabled={locked || !canUseSkill}
-                disabledHint={playing ? '연출 중…' : 'MP 부족'}
-              />
+            </div>
+
+            {/* 장착한 스킬 */}
+            <div className="mt-3 border-t border-abyss-700 pt-3">
+              <p className="mb-2 text-xs text-slate-400">
+                장착 스킬 ({skills.length}) — 구성은 전투 밖에서만 바꿀 수 있습니다
+              </p>
+              {skills.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  장착한 스킬이 없습니다. 전투가 끝난 뒤 전투 준비에서 골라 보세요.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {skills.map(({ skill, state, usable, reason }) => {
+                    const Icon = SKILL_ICON[skill.icon]
+                    return (
+                      <button
+                        key={skill.id}
+                        type="button"
+                        onClick={() => battleAction({ kind: 'skill', skillId: skill.id })}
+                        disabled={locked || !usable}
+                        title={skill.description}
+                        className="flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-xl border-2 border-violet-500/60 bg-abyss-800/80 px-3 py-2 text-left text-violet-200 transition-all hover:border-violet-400 hover:bg-violet-500/15 active:scale-95 disabled:cursor-not-allowed disabled:border-abyss-700 disabled:bg-abyss-800/40 disabled:text-slate-500"
+                      >
+                        <span className="flex w-full items-center gap-1.5 text-sm font-bold">
+                          <Icon size={16} aria-hidden />
+                          <span className="min-w-0 flex-1 truncate">{skill.name}</span>
+                          {state.usesLeft !== null && (
+                            <span className="shrink-0 text-[10px] font-normal opacity-70">
+                              {state.usesLeft}회
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[11px] opacity-80">
+                          {locked && playing
+                            ? '연출 중…'
+                            : (reason ?? `MP ${skill.mpCost}`)}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {usableItems.length > 0 && (
@@ -228,6 +358,14 @@ export function BattleView({ battle }: { battle: BattleState }) {
         )}
       </div>
 
+      {/* 보스 공략 힌트 */}
+      {monster.strategy && !finished && (
+        <p className="rounded-xl border border-abyss-700 bg-abyss-900/60 px-3 py-2 text-xs text-slate-400">
+          <span className="font-bold text-slate-300">공략 </span>
+          {monster.strategy}
+        </p>
+      )}
+
       {/* 전투 기록은 보조 정보로 접어 둔다 */}
       <div className="rounded-xl border border-abyss-700 bg-abyss-900/70">
         <button
@@ -253,7 +391,9 @@ export function BattleView({ battle }: { battle: BattleState }) {
                     ? 'text-sky-300'
                     : entry.side === 'monster'
                       ? 'text-rose-300'
-                      : 'text-slate-400'
+                      : entry.side === 'pet'
+                        ? 'text-emerald-300'
+                        : 'text-slate-400'
                 }
               >
                 <span className="mr-1.5 text-slate-600">{entry.turn}T</span>
@@ -270,7 +410,6 @@ export function BattleView({ battle }: { battle: BattleState }) {
 const TONE_CLASS = {
   attack: 'border-rose-500/60 hover:border-rose-400 hover:bg-rose-500/15 text-rose-200',
   defend: 'border-sky-500/60 hover:border-sky-400 hover:bg-sky-500/15 text-sky-200',
-  skill: 'border-violet-500/60 hover:border-violet-400 hover:bg-violet-500/15 text-violet-200',
 } as const
 
 function ActionButton({

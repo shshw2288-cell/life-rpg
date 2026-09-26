@@ -1,9 +1,16 @@
 import { Link } from 'react-router-dom'
 import { LumiAvatar } from '../components/character/LumiAvatar'
 import { EmptyState, PageShell, Panel } from '../components/layout/PageShell'
+import { DUNGEON_ENTRY } from '../data/battleConfig'
+import { findSpecies } from '../data/petConfig'
+import { ROLE_INFO } from '../data/petRoleConfig'
+import { findSkill } from '../data/skillConfig'
 import { TaskCard } from '../features/tasks/TaskCard'
+import { entryStatus } from '../engine/dungeon'
 import { stageForLevel } from '../engine/evolution'
 import { countHabitEvents, hasCompletedOn, totalsForDate } from '../engine/ledger'
+import { petRoleOf } from '../engine/petCombat'
+import { regionForFloor } from '../engine/regions'
 import { calcStreak, dailiesFor } from '../engine/schedule'
 import { formatDisplayDate, getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
@@ -135,6 +142,10 @@ export function DashboardPage() {
             </dl>
           </Panel>
 
+          <Panel title="모험 준비">
+            <AdventureStrip />
+          </Panel>
+
           {eggs.length > 0 && (
             <Panel title="품고 있는 알">
               <ul className="space-y-2">
@@ -160,5 +171,68 @@ export function DashboardPage() {
         </aside>
       </div>
     </PageShell>
+  )
+}
+
+/**
+ * 오늘의 활동이 모험으로 이어지는 흐름을 한눈에 보여준다.
+ * 현실 활동 → 성장 → 스킬·펫 준비 → 지역 도전 → 내 방 전시
+ */
+function AdventureStrip() {
+  const tower = useGameStore((state) => state.tower)
+  const towerKeys = useGameStore((state) => state.towerKeys)
+  const keyProgress = useGameStore((state) => state.keyProgress)
+  const dungeonDay = useGameStore((state) => state.dungeonDay)
+  const skillLoadout = useGameStore((state) => state.skillLoadout)
+  const activePetId = useGameStore((state) => state.activePetId)
+  const room = useGameStore((state) => state.room)
+  const today = getGameDate(new Date())
+
+  const region = regionForFloor(tower.highestCleared + 1)
+  const entries = entryStatus({ today, day: dungeonDay, towerKeys, keyProgress })
+  const skillNames = skillLoadout.map((id) => findSkill(id)?.name ?? id)
+  const pet = activePetId ? findSpecies(activePetId) : undefined
+
+  return (
+    <div className="space-y-2.5 text-sm">
+      <div className="flex justify-between">
+        <span className="text-slate-400">다음 목적지</span>
+        <span className="text-slate-200">
+          {region.name} {tower.highestCleared + 1}층
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-slate-400">입장 기회</span>
+        <span className="tabular-nums text-ember-400">{entries.remaining}회</span>
+      </div>
+      <div className="flex justify-between gap-2">
+        <span className="shrink-0 text-slate-400">스킬</span>
+        <span className="truncate text-right text-xs text-slate-300">
+          {skillNames.length > 0 ? skillNames.join(' · ') : '없음'}
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-slate-400">동행 펫</span>
+        <span className="text-xs text-slate-300">
+          {pet ? `${pet.name} (${ROLE_INFO[petRoleOf(pet)].label})` : '없음'}
+        </span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-slate-400">모은 가구</span>
+        <span className="tabular-nums text-slate-300">{room.owned.length}개</span>
+      </div>
+
+      <p className="border-t border-abyss-700 pt-2 text-[11px] leading-relaxed text-slate-500">
+        과제 {DUNGEON_ENTRY.completionsPerKey}개마다 탑의 열쇠가 1개 쌓입니다. 과제로 성장 →{' '}
+        <Link to="/dungeon" className="text-ember-400 underline underline-offset-2">
+          모험
+        </Link>
+        에서 지역 도전 →{' '}
+        <Link to="/room" className="text-ember-400 underline underline-offset-2">
+          내 방
+        </Link>
+        에 성취를 전시하세요.
+      </p>
+    </div>
   )
 }

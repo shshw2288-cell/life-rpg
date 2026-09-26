@@ -7,7 +7,7 @@ import { levelsUntilNextStage, nextStage, stageForLevel } from '../engine/evolut
 import { expForNextLevel } from '../engine/leveling'
 import { useGameStore } from '../store/useGameStore'
 
-const SLOTS: CosmeticSlot[] = ['hat', 'face', 'aura']
+const SLOTS: CosmeticSlot[] = ['hat', 'face', 'aura', 'cape']
 
 export function CharacterPage() {
   const character = useGameStore((state) => state.character)

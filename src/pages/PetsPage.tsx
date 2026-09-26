@@ -11,6 +11,8 @@ import {
   findSpecies,
   type PetGrade,
 } from '../data/petConfig'
+import { ROLE_INFO } from '../data/petRoleConfig'
+import { petAbilityDetail, petRoleOf } from '../engine/petCombat'
 import { GachaPanel } from '../features/pets/GachaPanel'
 import { PetSprite, UnknownPet } from '../features/pets/PetSprite'
 import { useGameStore } from '../store/useGameStore'
@@ -55,7 +57,7 @@ export function PetsPage() {
   return (
     <PageShell
       title="펫"
-      description={`총 ${PET_SPECIES.length}종 · 보유 ${ownedIds.length}종. 동행 펫 1마리의 효과가 과제 보상과 던전 전투에 적용됩니다.`}
+      description={`총 ${PET_SPECIES.length}종 · 보유 ${ownedIds.length}종. 동행 펫 1마리가 과제 보상을 올려주고, 전투에서는 역할(회복·방어·공격·지원)에 맞는 고유 능력을 씁니다.`}
     >
       <div className="flex flex-col gap-4">
         <GachaPanel />
@@ -77,6 +79,30 @@ export function PetsPage() {
                     {effectValue(activeSpecies.grade, activeSpecies.effect)}
                     {EFFECT_IS_PERCENT[activeSpecies.effect] ? '%' : ''}
                   </p>
+
+                  {/* 전투에서 맡는 역할 */}
+                  {(() => {
+                    const detail = petAbilityDetail(activeSpecies)
+                    return (
+                      <div className="w-full rounded-lg border border-abyss-700 bg-abyss-800/60 px-3 py-2 text-left">
+                        <p className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                          <span
+                            className="rounded px-1 py-0.5 text-[10px]"
+                            style={{
+                              color: ROLE_INFO[detail.role].color,
+                              backgroundColor: `${ROLE_INFO[detail.role].color}22`,
+                            }}
+                          >
+                            {detail.roleLabel}
+                          </span>
+                          {detail.abilityName}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">{detail.effect}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-500">발동: {detail.trigger}</p>
+                      </div>
+                    )
+                  })()}
+
                   <button
                     type="button"
                     onClick={() => setActivePet(null)}
@@ -179,6 +205,17 @@ export function PetsPage() {
                         {owned
                           ? `${EFFECT_LABEL[species.effect]} +${value}${EFFECT_IS_PERCENT[species.effect] ? '%' : ''}`
                           : EFFECT_LABEL[species.effect]}
+                      </span>
+                      <span
+                        className="rounded px-1 py-0.5 text-[10px] font-bold"
+                        style={{
+                          color: owned ? ROLE_INFO[petRoleOf(species)].color : '#475569',
+                          backgroundColor: owned
+                            ? `${ROLE_INFO[petRoleOf(species)].color}22`
+                            : 'transparent',
+                        }}
+                      >
+                        {ROLE_INFO[petRoleOf(species)].label}
                       </span>
                     </button>
                   </li>

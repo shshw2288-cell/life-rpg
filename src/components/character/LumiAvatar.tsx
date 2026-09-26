@@ -2,9 +2,9 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { useId } from 'react'
 import type { EvolutionStage } from '../../data/evolutionConfig'
 import type { CosmeticLoadout } from '../../types/battle'
-import { AuraLayer, FaceLayer, HatLayer, useCosmetics } from './CosmeticLayers'
+import { AuraLayer, CapeLayer, FaceLayer, HatLayer, useCosmetics } from './CosmeticLayers'
 
-const NO_COSMETICS: CosmeticLoadout = { hat: null, face: null, aura: null }
+const NO_COSMETICS: CosmeticLoadout = { hat: null, face: null, aura: null, cape: null }
 
 /**
  * 루미의 자세. 전투 연출에서 바꿔 끼운다.
@@ -143,6 +143,9 @@ export function LumiAvatar({
 
         <g transform={`translate(100 112) scale(${scale}) translate(-100 -112)`}>
           <Antennae palette={palette} count={form.antennae} reduceMotion={reduceMotion} />
+
+          {/* 망토는 몸통보다 뒤에 그린다 */}
+          {worn.cape && <CapeLayer cosmetic={worn.cape} />}
 
           {/* 다리 */}
           <ellipse cx="82" cy="170" rx="16" ry="10" fill={palette.bodyDark} />

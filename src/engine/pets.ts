@@ -6,7 +6,7 @@ import {
   PET_SPECIES,
   effectValue,
   findSpecies,
-  speciesByGrade,
+  gachaPool,
   type PetGrade,
   type PetSpecies,
 } from '../data/petConfig'
@@ -31,10 +31,10 @@ export function rollGrade(rng: Rng, minGrade?: PetGrade): PetGrade {
   return pool[pool.length - 1]
 }
 
-/** 등급을 뽑고 그 등급 안에서 균등하게 종을 고른다 */
+/** 등급을 뽑고 그 등급 안에서 균등하게 종을 고른다 (지역 보상 전용 펫은 제외) */
 export function pickSpecies(rng: Rng, minGrade?: PetGrade): PetSpecies {
   const grade = rollGrade(rng, minGrade)
-  const pool = speciesByGrade(grade)
+  const pool = gachaPool(grade)
   if (pool.length === 0) return PET_SPECIES[0]
   const index = Math.min(pool.length - 1, Math.floor(rng() * pool.length))
   return pool[index]

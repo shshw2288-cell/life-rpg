@@ -80,12 +80,13 @@ export function findItem(id: string): ShopItem | undefined {
 }
 
 /** 캐릭터 꾸미기 부위 */
-export type CosmeticSlot = 'hat' | 'face' | 'aura'
+export type CosmeticSlot = 'hat' | 'face' | 'aura' | 'cape'
 
 export const SLOT_LABEL: Record<CosmeticSlot, string> = {
   hat: '모자',
   face: '얼굴',
   aura: '오라',
+  cape: '망토',
 }
 
 export interface Cosmetic {
@@ -109,6 +110,9 @@ export interface Cosmetic {
     | 'firefly_aura'
     | 'stardust_aura'
     | 'flame_aura'
+    | 'wind_cloak'
+  /** 상점에서 팔지 않고 모험 보상으로만 얻는 것 */
+  reward?: string
 }
 
 export const COSMETICS: Cosmetic[] = [
@@ -128,8 +132,14 @@ export const COSMETICS: Cosmetic[] = [
   { id: 'firefly_aura', name: '반딧불 오라', description: '주위를 맴도는 작은 불빛.', slot: 'aura', price: 280, style: { primary: '#fde68a' }, art: 'firefly_aura' },
   { id: 'stardust_aura', name: '별가루 오라', description: '걸음마다 별이 떨어진다.', slot: 'aura', price: 520, style: { primary: '#c4b5fd' }, art: 'stardust_aura' },
   { id: 'flame_aura', name: '불꽃 오라', description: '의욕이 타오르는 사람에게.', slot: 'aura', price: 820, style: { primary: '#fb923c' }, art: 'flame_aura' },
+
+  // 망토 — 모험 보상 전용 (상점에서는 팔지 않는다)
+  { id: 'wind_cloak', name: '바람 망토', description: '절벽의 바람을 담은 망토. 걸을 때마다 펄럭인다.', slot: 'cape', price: 0, style: { primary: '#7dd3fc', secondary: '#0369a1' }, art: 'wind_cloak', reward: '바람 절벽 첫 클리어' },
 ]
 
 export function findCosmetic(id: string): Cosmetic | undefined {
   return COSMETICS.find((cosmetic) => cosmetic.id === id)
 }
+
+/** 상점 진열대에 올릴 꾸미기 (보상 전용 제외) */
+export const SHOP_COSMETICS = COSMETICS.filter((cosmetic) => !cosmetic.reward)

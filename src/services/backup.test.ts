@@ -103,6 +103,64 @@ describe('백업 가져오기 검사', () => {
     expect(migrated.keyProgress).toBe(0)
   })
 
+  it('v9는 스킬·지역·내 방 기본값을 채운다', () => {
+    const migrated = migrateSave({ ...sample, tower: { highestCleared: 0, lastFloor: 1 } }, 8)
+    expect(migrated.skillLoadout).toHaveLength(3)
+    expect(migrated.regionClears).toEqual([])
+    expect(migrated.room.owned.length).toBeGreaterThan(0)
+    expect(migrated.room.placements.length).toBeGreaterThan(0)
+    expect(migrated.cosmetics.cape).toBeNull()
+  })
+
+  it('이미 오른 층으로 지역 진행도를 인정하고 보상을 한 번만 준다', () => {
+    // 지역 기능 이전에 25층까지 오른 저장 데이터
+    const old = { ...sample, tower: { highestCleared: 25, lastFloor: 25 }, pets: [] }
+    const migrated = migrateSave(old, 8)
+
+    expect(migrated.regionClears).toEqual(['forest', 'cave'])
+    expect(migrated.room.owned).toContain('sprout_pot')
+    expect(migrated.pets.filter((pet) => pet.speciesId === 'spore_cap')).toHaveLength(1)
+    // 아직 못 깬 지역의 보상은 없다
+    expect(migrated.ownedCosmetics).not.toContain('wind_cloak')
+
+    // 다시 올려도 늘지 않는다
+    const again = migrateSave(migrated, SCHEMA_VERSION)
+    expect(again.regionClears).toEqual(['forest', 'cave'])
+    expect(again.pets.filter((pet) => pet.speciesId === 'spore_cap')).toHaveLength(1)
+  })
+
+  it('진행 중이던 전투는 새 형식으로 이어 받는다', () => {
+    const old = {
+      ...sample,
+      tower: { highestCleared: 4, lastFloor: 5 },
+      battle: {
+        id: 'b1',
+        floor: 5,
+        startedOn: '2025-09-25',
+        turn: 3,
+        status: 'active',
+        player: { hp: 20, maxHp: 60, mp: 4, maxMp: 20 },
+        playerStats: { maxHp: 60, attack: 10, defense: 3, maxMp: 20, critChance: 0.05 },
+        monster: { hp: 30, maxHp: 100 },
+        defending: false,
+        monsterCharging: false,
+        patternIndex: 0,
+        log: [],
+        rewardGranted: false,
+        revivedOnce: false,
+      },
+    }
+    // v8 세이브에는 skills·pet·statuses·intent 칸이 없다
+    const migrated = migrateSave(old as never, 8)
+
+    expect(migrated.battle).not.toBeNull()
+    expect(migrated.battle!.turn).toBe(3)
+    expect(migrated.battle!.player.hp).toBe(20)
+    expect(migrated.battle!.monsterDef.floor).toBe(5)
+    expect(migrated.battle!.playerStatuses).toEqual([])
+    expect(migrated.battle!.skills.length).toBeGreaterThan(0)
+  })
+
   it('옛 버전 백업은 현재 형식으로 올려서 받는다', () => {
     const old = {
       app: 'life-rpg',
@@ -124,7 +182,7 @@ describe('백업 가져오기 검사', () => {
     // v1에는 없던 필드가 기본값으로 채워져야 한다
     expect(result.state.schemaVersion).toBe(SCHEMA_VERSION)
     expect(result.state.tower).toEqual({ highestCleared: 0, lastFloor: 1 })
-    expect(result.state.cosmetics).toEqual({ hat: null, face: null, aura: null })
+    expect(result.state.cosmetics).toEqual({ hat: null, face: null, aura: null, cape: null })
     expect(result.state.character.level).toBe(3)
   })
 })

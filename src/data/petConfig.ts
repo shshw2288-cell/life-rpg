@@ -77,6 +77,8 @@ export interface PetSpecies {
   accent: string
   /** 외형 구분 */
   shape: 'blob' | 'ear' | 'wing' | 'horn'
+  /** 뽑기 풀에서 빼는 종. 지역 보상 등으로만 얻는다. */
+  exclusive?: boolean
 }
 
 /**
@@ -113,6 +115,8 @@ export const PET_SPECIES: PetSpecies[] = [
   { id: 'thunder_chick', name: '번개병아리', description: '삐약 소리와 함께 불꽃이 튄다.', grade: 'B', effect: 'attack', color: '#fde047', accent: '#a16207', shape: 'wing' },
   { id: 'moss_owl', name: '이끼부엉', description: '오래된 숲의 기억을 알려준다.', grade: 'B', effect: 'exp', color: '#a7f3d0', accent: '#047857', shape: 'wing' },
   { id: 'coin_crab', name: '동전게', description: '집게로 동전을 모으는 버릇이 있다.', grade: 'B', effect: 'gold', color: '#fcd34d', accent: '#b45309', shape: 'horn' },
+  // 버섯 동굴을 처음 깨면 확정으로 합류한다. 뽑기로는 나오지 않는다.
+  { id: 'spore_cap', name: '포자모자', description: '버섯 동굴의 빛나는 포자에서 태어난 친구. 상처에 포자를 덮어 아물게 한다.', grade: 'B', effect: 'hp', color: '#86efac', accent: '#166534', shape: 'blob', exclusive: true },
 
   // ── A 등급 7종 ─────────────────────────────
   { id: 'nova', name: '노바', description: '별에서 떨어진 친구. 좀처럼 만나기 어렵다.', grade: 'A', effect: 'crit', color: '#d8b4fe', accent: '#9333ea', shape: 'wing' },
@@ -135,6 +139,11 @@ export function findSpecies(id: string): PetSpecies | undefined {
 
 export function speciesByGrade(grade: PetGrade): PetSpecies[] {
   return PET_SPECIES.filter((species) => species.grade === grade)
+}
+
+/** 뽑기·부화로 나올 수 있는 종만. 지역 보상 전용 펫은 빠진다. */
+export function gachaPool(grade: PetGrade): PetSpecies[] {
+  return PET_SPECIES.filter((species) => species.grade === grade && !species.exclusive)
 }
 
 /** 알 부화 규칙 */

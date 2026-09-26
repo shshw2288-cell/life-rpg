@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { LumiAvatar } from '../components/character/LumiAvatar'
 import { PageShell, Panel } from '../components/layout/PageShell'
 import {
-  COSMETICS,
+  SHOP_COSMETICS,
   SHOP_ITEMS,
   SLOT_LABEL,
   type Cosmetic,
@@ -20,6 +20,7 @@ const ITEM_ICON = {
   key: Key,
 } as const
 
+// 망토는 상점에서 팔지 않고 모험 보상으로만 얻으므로 진열대에 올리지 않는다
 const SLOTS: CosmeticSlot[] = ['hat', 'face', 'aura']
 
 export function ShopPage() {
@@ -174,7 +175,7 @@ export function ShopPage() {
             {SLOTS.map((slot) => (
               <Panel key={slot} title={SLOT_LABEL[slot]}>
                 <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {COSMETICS.filter((cosmetic) => cosmetic.slot === slot).map((cosmetic) => (
+                  {SHOP_COSMETICS.filter((cosmetic) => cosmetic.slot === slot).map((cosmetic) => (
                     <CosmeticCard
                       key={cosmetic.id}
                       cosmetic={cosmetic}

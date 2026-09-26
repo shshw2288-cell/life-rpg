@@ -3,7 +3,14 @@ import { persist } from 'zustand/middleware'
 import { MATERIALS, STARTING_TOWER_KEYS } from '../data/battleConfig'
 import { CHARACTER_DEFAULTS, DEATH_PENALTY, HISTORY_RETENTION_DAYS } from '../data/gameConfig'
 import { GACHA, GRADES } from '../data/petConfig'
+import {
+  DEFAULT_PLACEMENTS,
+  STARTER_FURNITURE,
+  findFurniture,
+  type FurnitureDef,
+} from '../data/roomConfig'
 import { findCosmetic, findItem, type CosmeticSlot } from '../data/shopConfig'
+import { newlyAchievedFurniture } from '../engine/achievements'
 import {
   calcRewards,
   createBattle,
@@ -11,6 +18,15 @@ import {
   takeTurn,
   useItemTurn,
 } from '../engine/combat'
+import { makeBattlePet } from '../engine/petCombat'
+import { newlyClearedRegion } from '../engine/regions'
+import {
+  firstFreeSpot,
+  placeFurniture as placeInRoom,
+  removeFurniture as removeFromRoom,
+  resetPlacements,
+} from '../engine/room'
+import { SKILL_SLOTS, defaultLoadout, normalizeLoadout, unlockedSkillIds } from '../engine/skills'
 import { canChallenge, firstClearBonus, monsterForFloor } from '../engine/tower'
 import { addKeyProgress, entryStatus, rollOverDay } from '../engine/dungeon'
 import { countHabitEvents } from '../engine/ledger'
@@ -104,6 +120,19 @@ interface GameStore extends GameState {
   /** 3대 운동 무게 조절 */
   adjustBigThree: (lift: BigThreeLift, delta: number) => void
   setBigThree: (lift: BigThreeLift, weight: number) => void
+  /**
+   * 스킬 장착/해제. 전투 중에는 바꿀 수 없고, 같은 스킬을 두 번 넣을 수 없다.
+   * 슬롯이 꽉 차 있으면 아무 일도 하지 않는다.
+   */
+  toggleSkill: (skillId: string) => void
+  /** 가구를 격자에 놓는다(이미 놓여 있으면 옮긴다). 규칙에 어긋나면 아무 일도 하지 않는다. */
+  placeFurniture: (furnitureId: string, x: number, y: number) => void
+  /** 가구를 배치에서 내린다. 보유 목록에서는 사라지지 않는다. */
+  pickUpFurniture: (furnitureId: string) => void
+  /** 배치만 기본 상태로 되돌린다. 보유 가구는 그대로다. */
+  resetRoom: () => void
+  /** 저장된 기록을 보고 새로 조건을 채운 가구를 지급한다. 여러 번 불러도 중복 지급되지 않는다. */
+  syncRoomUnlocks: () => void
   /** 백업 파일로 내보낼 현재 상태 */
   exportSave: () => GameState
   /** 백업에서 상태를 통째로 되돌린다 */
@@ -136,10 +165,13 @@ function initialState(): GameState {
     towerKeys: STARTING_TOWER_KEYS,
     keyProgress: 0,
     tower: { highestCleared: 0, lastFloor: 1 },
+    skillLoadout: defaultLoadout(),
+    regionClears: [],
+    room: { owned: [...STARTER_FURNITURE], placements: DEFAULT_PLACEMENTS.map((item) => ({ ...item })) },
     battle: null,
     inventory: {},
     ownedCosmetics: [],
-    cosmetics: { hat: null, face: null, aura: null },
+    cosmetics: { hat: null, face: null, aura: null, cape: null },
     meta: {
       // 어제까지 정산된 것으로 보아 가입 이전 날짜에는 피해를 주지 않는다.
       lastSettledDate: addDays(today, -1),
@@ -497,13 +529,22 @@ export const useGameStore = create<GameStore>()(
         const monster = monsterForFloor(target)
         // 동행 펫의 전투 효과를 능력치에 더한다
         const stats = deriveCombatStats(state.character.level, petBonuses(state.activePetId).combat)
+        // 스킬 구성과 동행 펫은 이 시점에 확정되어 전투 내내 바뀌지 않는다
+        const skillIds = normalizeLoadout(state.skillLoadout, state.tower.highestCleared)
 
         set({
           // 입장할 때 횟수를 먼저 차감한다. 새로고침으로 되돌릴 수 없다.
           dungeonDay: useKey ? day : { date: today, entriesUsed: day.entriesUsed + 1 },
           towerKeys: useKey ? state.towerKeys - 1 : state.towerKeys,
           tower: { ...state.tower, lastFloor: target },
-          battle: createBattle({ id: newId(), monster, stats, startedOn: today }),
+          battle: createBattle({
+            id: newId(),
+            monster,
+            stats,
+            startedOn: today,
+            skillIds,
+            pet: makeBattlePet(state.activePetId),
+          }),
         })
       },
 
@@ -618,6 +659,8 @@ export const useGameStore = create<GameStore>()(
         // 화면을 나가면 남은 연출도 버린다
         useBattleAnimStore.getState().reset()
         set({ battle: null })
+        // 방금 딴 보스로 열린 가구가 있으면 바로 지급한다 (이미 가진 것은 그대로)
+        get().syncRoomUnlocks()
       },
 
       drawPet: (count) => {
@@ -877,6 +920,69 @@ export const useGameStore = create<GameStore>()(
         }))
       },
 
+      toggleSkill: (skillId) => {
+        const state = get()
+        // 전투 중에는 구성을 바꿀 수 없다 (이번 판의 스킬은 입장할 때 확정된다)
+        if (state.battle && state.battle.status === 'active') return
+        if (!unlockedSkillIds(state.tower.highestCleared).includes(skillId)) return
+
+        const equipped = state.skillLoadout.includes(skillId)
+        if (!equipped && state.skillLoadout.length >= SKILL_SLOTS) return
+
+        const next = equipped
+          ? state.skillLoadout.filter((id) => id !== skillId)
+          : [...state.skillLoadout, skillId]
+        set({ skillLoadout: normalizeLoadout(next, state.tower.highestCleared) })
+      },
+
+      placeFurniture: (furnitureId, x, y) => {
+        const state = get()
+        if (!state.room.owned.includes(furnitureId)) return
+        const next = placeInRoom(state.room.placements, furnitureId, x, y)
+        if (!next) return
+        set({ room: { ...state.room, placements: next } })
+      },
+
+      pickUpFurniture: (furnitureId) => {
+        const state = get()
+        set({
+          room: { ...state.room, placements: removeFromRoom(state.room.placements, furnitureId) },
+        })
+      },
+
+      resetRoom: () => {
+        const state = get()
+        set({ room: { ...state.room, placements: resetPlacements(state.room.owned) } })
+      },
+
+      syncRoomUnlocks: () => {
+        const state = get()
+        const fresh = newlyAchievedFurniture(
+          {
+            subjects: state.subjects,
+            workout: state.workout,
+            tower: state.tower,
+            character: state.character,
+          },
+          state.room.owned,
+        )
+        if (fresh.length === 0) return
+
+        const { owned, placements } = addFurniture(state.room, fresh)
+        set({
+          room: { owned, placements },
+          feedback: [
+            ...state.feedback,
+            ...fresh.map((def) => ({
+              id: newId(),
+              kind: 'evolve' as const,
+              title: `새 가구: ${def.name}`,
+              detail: '내 방에서 배치할 수 있습니다.',
+            })),
+          ],
+        })
+      },
+
       exportSave: () => {
         const state = get()
         return {
@@ -896,6 +1002,9 @@ export const useGameStore = create<GameStore>()(
           towerKeys: state.towerKeys,
           keyProgress: state.keyProgress,
           tower: state.tower,
+          skillLoadout: state.skillLoadout,
+          regionClears: state.regionClears,
+          room: state.room,
           battle: state.battle,
           inventory: state.inventory,
           ownedCosmetics: state.ownedCosmetics,
@@ -928,6 +1037,9 @@ export const useGameStore = create<GameStore>()(
         towerKeys: state.towerKeys,
         keyProgress: state.keyProgress,
         tower: state.tower,
+        skillLoadout: state.skillLoadout,
+        regionClears: state.regionClears,
+        room: state.room,
         battle: state.battle,
         inventory: state.inventory,
         ownedCosmetics: state.ownedCosmetics,
@@ -1042,6 +1154,41 @@ function resolveBattleResult(state: GameStore, battle: BattleState): Partial<Gam
       title: `${next.floor}층 ${monster.name} 처치!`,
       detail: `+${gold} Gold${bonus ? ` (첫 격파 +${bonus})` : ''}${materialText ? ` · ${materialText}` : ''}`,
     })
+
+    // 지역 첫 클리어 보상은 regionClears 에 기록된 적이 없을 때만 한 번 지급한다
+    const region = newlyClearedRegion(next.floor, state.regionClears)
+    if (region) {
+      patch.regionClears = [...state.regionClears, region.id]
+      const reward = region.firstClearReward
+      if (reward) {
+        if (reward.kind === 'furniture') {
+          const added = addFurniture(state.room, [findFurniture(reward.id)].filter(isFurniture))
+          patch.room = added
+        } else if (reward.kind === 'pet') {
+          if (!state.pets.some((pet) => pet.speciesId === reward.id)) {
+            patch.pets = [
+              ...state.pets,
+              { id: newId(), speciesId: reward.id, hatchedOn: next.startedOn },
+            ]
+          }
+          patch.activePetId = state.activePetId ?? reward.id
+        } else if (reward.kind === 'cosmetic') {
+          const cosmetic = findCosmetic(reward.id)
+          if (cosmetic && !state.ownedCosmetics.includes(reward.id)) {
+            patch.ownedCosmetics = [...state.ownedCosmetics, reward.id]
+            patch.cosmetics = { ...state.cosmetics, [cosmetic.slot]: reward.id }
+          }
+        }
+      }
+      feedback.push({
+        id: newId(),
+        kind: 'evolve',
+        title: `${region.name} 정복!`,
+        detail: reward
+          ? `${reward.name} 획득 · ${reward.note}`
+          : '새로운 지역이 열렸습니다.',
+      })
+    }
   }
 
   if (next.status === 'lost') {
@@ -1054,6 +1201,31 @@ function resolveBattleResult(state: GameStore, battle: BattleState): Partial<Gam
   }
 
   return { ...patch, battle: next, feedback: [...state.feedback, ...feedback] }
+}
+
+function isFurniture(def: FurnitureDef | undefined): def is FurnitureDef {
+  return Boolean(def)
+}
+
+/**
+ * 새로 얻은 가구를 보유 목록에 넣고, 자리가 있으면 바로 놓아준다.
+ * 이미 가지고 있는 가구는 다시 넣지 않으므로 중복 지급이 생기지 않는다.
+ */
+function addFurniture(
+  room: GameState['room'],
+  items: FurnitureDef[],
+): GameState['room'] {
+  const owned = [...room.owned]
+  let placements = [...room.placements]
+
+  for (const def of items) {
+    if (owned.includes(def.id)) continue
+    owned.push(def.id)
+    const spot = firstFreeSpot(placements, def)
+    if (spot) placements = [...placements, { furnitureId: def.id, x: spot.x, y: spot.y }]
+  }
+
+  return { owned, placements }
 }
 
 /** 동행 펫의 EXP·Gold 효과를 보상에 적용한다 */

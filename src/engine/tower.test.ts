@@ -95,20 +95,23 @@ describe('보스 전투', () => {
     expect(state.player.hp).toBeLessThan(afterAttack)
   })
 
-  it('회복 패턴이 있는 보스는 체력을 되돌린다', () => {
-    // 무한 스크롤 히드라(20층) 패턴: attack, attack, heal, ...
+  it('저지하지 않으면 보스가 체력을 되돌린다', () => {
+    // 무한 스크롤 히드라(20층) 패턴: 포자, 공격, 재생 준비, 재생, 휘감기
     let state = createBattle({
       id: 'b2',
       monster: monsterForFloor(20),
       stats: deriveCombatStats(60),
       startedOn: '2025-09-25',
+      skillIds: ['starlight_arrow'],
     })
     // 먼저 두 대 때려 체력을 깎아야 회복이 눈에 보인다
     state = takeTurn(state, 'attack', steady).battle
     state = takeTurn(state, 'attack', steady).battle
+    state = takeTurn(state, 'defend', steady).battle // 재생 준비
     const before = state.monster.hp
     expect(before).toBeLessThan(state.monster.maxHp)
 
+    // 저지 조건을 채우지 않고 방어만 하면 회복한다
     state = takeTurn(state, 'defend', steady).battle
     expect(state.monster.hp).toBeGreaterThan(before)
   })

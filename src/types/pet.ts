@@ -14,3 +14,9 @@ export interface Pet {
   nickname?: string
   hatchedOn: GameDate
 }
+
+/**
+ * 전투에서 맡는 역할.
+ * 등급이 높다고 모든 상황에서 좋아지지 않도록 역할마다 발동 조건을 다르게 둔다.
+ */
+export type PetRole = 'healer' | 'guard' | 'striker' | 'support'

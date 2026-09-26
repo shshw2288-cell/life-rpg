@@ -1,23 +1,37 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { LumiAvatar, type LumiPose } from '../../components/character/LumiAvatar'
+import { findSpecies } from '../../data/petConfig'
 import { stageForLevel } from '../../engine/evolution'
 import { useGameStore } from '../../store/useGameStore'
 import type { BattleState, BattleStep } from '../../types/battle'
+import { PetSprite } from '../pets/PetSprite'
 import { useBattleAnimStore } from './battleAnimStore'
-import { ForestRuinsBackdrop } from './ForestRuinsBackdrop'
 import { MonsterSprite, type MonsterPose } from './MonsterSprite'
+import { RegionBackdrop } from './RegionBackdrop'
 
 /** 단계별 재생 시간 (ms) */
 const STEP_MS: Record<BattleStep['kind'], number> = {
   player_attack: 720,
   player_skill: 900,
+  player_heal: 700,
+  player_buff: 680,
+  enemy_debuff: 720,
   player_defend: 520,
   player_item: 620,
+  pet_attack: 660,
+  pet_heal: 660,
+  pet_guard: 700,
+  pet_support: 660,
   monster_attack: 700,
   monster_heavy: 820,
   monster_charge: 620,
+  monster_prep: 660,
   monster_heal: 620,
+  monster_guard: 660,
+  monster_rest: 660,
+  monster_interrupted: 820,
+  status_damage: 600,
   revive: 900,
   win: 900,
   lose: 900,
@@ -27,7 +41,7 @@ interface FloatingNumber {
   id: number
   side: 'player' | 'monster'
   text: string
-  tone: 'damage' | 'crit' | 'heal' | 'mana'
+  tone: 'damage' | 'crit' | 'heal' | 'mana' | 'buff'
 }
 
 /**
@@ -51,11 +65,18 @@ export function BattleStage({ battle }: { battle: BattleState }) {
   const [numbers, setNumbers] = useState<FloatingNumber[]>([])
   const [slash, setSlash] = useState<'none' | 'attack' | 'skill'>('none')
   const [shield, setShield] = useState(false)
+  const [petActive, setPetActive] = useState(false)
+  const [banner, setBanner] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null)
   const numberId = useRef(0)
 
   const stage = stageForLevel(level)
   const monster = battle.monsterDef
   const finished = battle.status !== 'active'
+  const petSpecies = battle.pet ? findSpecies(battle.pet.speciesId) : undefined
+  const monsterGuarded = battle.monsterStatuses.some((status) => status.id === 'guard')
+  const monsterExposed = battle.monsterStatuses.some((status) => status.id === 'vulnerable')
+  const monsterBound = battle.monsterStatuses.some((status) => status.id === 'weaken')
+  const playerShielded = battle.playerStatuses.some((status) => status.id === 'shield')
 
   // 다른 전투의 잔여 연출은 버린다
   useEffect(() => {
@@ -72,6 +93,8 @@ export function BattleStage({ battle }: { battle: BattleState }) {
       setMonsterPose(battle.monster.hp <= 0 ? 'defeat' : 'idle')
       setSlash('none')
       setShield(false)
+      setPetActive(false)
+      setBanner(null)
       return
     }
 
@@ -80,6 +103,8 @@ export function BattleStage({ battle }: { battle: BattleState }) {
       setNumbers((list) => [...list, { ...item, id }])
       setTimeout(() => setNumbers((list) => list.filter((entry) => entry.id !== id)), 1100)
     }
+
+    setBanner(null)
 
     switch (current.kind) {
       case 'player_attack':
@@ -106,6 +131,20 @@ export function BattleStage({ battle }: { battle: BattleState }) {
           })
         }, 380)
         break
+      case 'player_heal':
+        setPlayerPose('cast')
+        push({ side: 'player', text: `+${current.amount} HP`, tone: 'heal' })
+        break
+      case 'player_buff':
+        setPlayerPose('cast')
+        if (current.status === 'shield') setShield(true)
+        push({ side: 'player', text: current.name, tone: 'buff' })
+        break
+      case 'enemy_debuff':
+        setPlayerPose('cast')
+        setMonsterPose('hit')
+        push({ side: 'monster', text: current.name, tone: 'buff' })
+        break
       case 'player_defend':
         setPlayerPose('defend')
         setShield(true)
@@ -116,6 +155,30 @@ export function BattleStage({ battle }: { battle: BattleState }) {
           side: 'player',
           text: current.heal ? `+${current.heal} HP` : `+${current.mana} MP`,
           tone: current.heal ? 'heal' : 'mana',
+        })
+        break
+      case 'pet_attack':
+        setPetActive(true)
+        setTimeout(() => {
+          setMonsterPose('hit')
+          push({ side: 'monster', text: `${current.damage}`, tone: 'damage' })
+        }, 200)
+        break
+      case 'pet_heal':
+        setPetActive(true)
+        push({ side: 'player', text: `+${current.amount} HP`, tone: 'heal' })
+        break
+      case 'pet_guard':
+        setPetActive(true)
+        setShield(true)
+        setBanner({ text: `${current.name} — 피해 감소!`, tone: 'good' })
+        break
+      case 'pet_support':
+        setPetActive(true)
+        push({
+          side: 'player',
+          text: current.cleansed ? '중독 해제' : `+${current.mana} MP`,
+          tone: current.cleansed ? 'heal' : 'mana',
         })
         break
       case 'monster_attack':
@@ -133,9 +196,28 @@ export function BattleStage({ battle }: { battle: BattleState }) {
       case 'monster_charge':
         setMonsterPose('charge')
         break
+      case 'monster_prep':
+        setMonsterPose('charge')
+        setBanner({ text: `${monster.name} — ${current.what}`, tone: 'bad' })
+        break
+      case 'monster_guard':
+        setMonsterPose('charge')
+        setBanner({ text: `${monster.name}이(가) 보호막을 둘렀다`, tone: 'bad' })
+        break
+      case 'monster_rest':
+        setMonsterPose('hit')
+        setBanner({ text: '약점 노출! 지금이 기회입니다', tone: 'good' })
+        break
+      case 'monster_interrupted':
+        setMonsterPose('hit')
+        setBanner({ text: `${current.what} 저지 성공!`, tone: 'good' })
+        break
       case 'monster_heal':
         setMonsterPose('heal')
         push({ side: 'monster', text: `+${current.amount}`, tone: 'heal' })
+        break
+      case 'status_damage':
+        push({ side: current.side, text: `중독 ${current.amount}`, tone: 'damage' })
         break
       case 'revive':
         setPlayerPose('cast')
@@ -152,26 +234,53 @@ export function BattleStage({ battle }: { battle: BattleState }) {
 
     const timer = setTimeout(advance, reduceMotion ? 220 : STEP_MS[current.kind])
     return () => clearTimeout(timer)
-  }, [current, advance, reduceMotion, battle.status, battle.monster.hp])
+  }, [current, advance, reduceMotion, battle.status, battle.monster.hp, monster.name])
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-abyss-700 shadow-[inset_0_0_60px_rgba(0,0,0,0.5)]">
-      <ForestRuinsBackdrop />
+      <RegionBackdrop theme={monster.theme} />
 
       {/* 무대: 두 캐릭터가 같은 바닥선 위에 선다 */}
       <div className="relative mx-auto flex h-[260px] max-w-[880px] items-end justify-between px-3 pb-6 sm:h-[310px] sm:px-10 sm:pb-8 md:h-[350px]">
         {/* 플레이어 — 좁은 화면에서는 축소하되 바닥선은 유지한다 */}
-        <div className="relative flex origin-bottom scale-[0.66] flex-col items-center sm:scale-90 md:scale-100">
-          <FloatingNumbers numbers={numbers.filter((entry) => entry.side === 'player')} />
-          {shield && <ShieldBubble />}
-          <LumiAvatar
-            stage={stage}
-            size={168}
-            pose={playerPose}
-            fainted={battle.status === 'lost'}
-            cosmetics={cosmetics}
-            shadow
-          />
+        <div className="relative flex origin-bottom scale-[0.66] items-end sm:scale-90 md:scale-100">
+          <div className="relative flex flex-col items-center">
+            <FloatingNumbers numbers={numbers.filter((entry) => entry.side === 'player')} />
+            {(shield || playerShielded) && <ShieldBubble />}
+            <LumiAvatar
+              stage={stage}
+              size={168}
+              pose={playerPose}
+              fainted={battle.status === 'lost'}
+              cosmetics={cosmetics}
+              shadow
+            />
+          </div>
+
+          {/* 동행 펫 — 루미 옆에 선다 */}
+          {petSpecies && (
+            <motion.div
+              className="relative -ml-2 mb-1"
+              animate={
+                reduceMotion || !petActive
+                  ? { y: 0, scale: 1 }
+                  : { y: [0, -14, 0], scale: [1, 1.18, 1] }
+              }
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            >
+              {petActive && (
+                <motion.span
+                  className="absolute -top-1 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-bold text-abyss-950"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: -8 }}
+                  exit={{ opacity: 0 }}
+                >
+                  {battle.pet?.abilityName}
+                </motion.span>
+              )}
+              <PetSprite species={petSpecies} size={64} idle />
+            </motion.div>
+          )}
         </div>
 
         {/* 가운데 이펙트 */}
@@ -184,6 +293,9 @@ export function BattleStage({ battle }: { battle: BattleState }) {
         {/* 몬스터 */}
         <div className="relative flex origin-bottom scale-[0.66] flex-col items-center sm:scale-90 md:scale-100">
           <FloatingNumbers numbers={numbers.filter((entry) => entry.side === 'monster')} />
+          {monsterGuarded && <GuardRing />}
+          {monsterExposed && <ExposedMark />}
+          {monsterBound && <BoundVines />}
           <MonsterSprite
             monster={monster}
             size={monster.isBoss ? 200 : 168}
@@ -195,10 +307,10 @@ export function BattleStage({ battle }: { battle: BattleState }) {
         </div>
       </div>
 
-      {/* 층 표시 */}
-      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
+      {/* 층·지역 표시 */}
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg bg-black/55 px-2.5 py-1 text-xs font-bold text-amber-200 backdrop-blur-sm">
-          {battle.floor}층
+          {monster.regionName} {battle.floor}층
         </span>
         <span className="rounded-lg bg-black/45 px-2 py-1 text-[11px] text-slate-200 backdrop-blur-sm">
           {battle.turn}턴
@@ -209,6 +321,24 @@ export function BattleStage({ battle }: { battle: BattleState }) {
           </span>
         )}
       </div>
+
+      {/* 중요한 순간을 한 줄로 알려준다 */}
+      <AnimatePresence>
+        {banner && (
+          <motion.div
+            className={`pointer-events-none absolute inset-x-0 top-1/2 mx-auto w-fit -translate-y-1/2 rounded-xl px-4 py-2 text-sm font-black shadow-lg ${
+              banner.tone === 'good'
+                ? 'bg-emerald-500/90 text-abyss-950'
+                : 'bg-amber-500/90 text-abyss-950'
+            }`}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+          >
+            {banner.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -219,6 +349,7 @@ function FloatingNumbers({ numbers }: { numbers: FloatingNumber[] }) {
     crit: 'text-amber-300',
     heal: 'text-emerald-300',
     mana: 'text-indigo-300',
+    buff: 'text-sky-200',
   } as const
 
   return (
@@ -251,6 +382,61 @@ function ShieldBubble() {
       transition={{ duration: 0.3 }}
       aria-hidden
     />
+  )
+}
+
+/** 적이 보호막을 두른 상태 */
+function GuardRing() {
+  return (
+    <motion.span
+      className="pointer-events-none absolute inset-x-0 bottom-3 z-10 mx-auto h-[160px] w-[160px] rounded-full border-[3px] border-indigo-300/80 bg-indigo-400/15"
+      initial={{ opacity: 0, scale: 0.7 }}
+      animate={{ opacity: [0.7, 1, 0.7], scale: 1 }}
+      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+      aria-hidden
+    />
+  )
+}
+
+/** 적의 약점이 드러난 상태 */
+function ExposedMark() {
+  return (
+    <motion.svg
+      viewBox="0 0 100 100"
+      className="pointer-events-none absolute -top-1 right-1 z-10 h-10 w-10"
+      initial={{ opacity: 0, scale: 0.6 }}
+      animate={{ opacity: 1, scale: [1, 1.15, 1] }}
+      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+      aria-hidden
+    >
+      <path
+        d="M 54 6 L 24 54 L 46 54 L 38 94 L 74 42 L 50 42 Z"
+        fill="#fbbf24"
+        stroke="#7c2d12"
+        strokeWidth="5"
+        strokeLinejoin="round"
+      />
+    </motion.svg>
+  )
+}
+
+/** 덩굴에 묶인 상태 */
+function BoundVines() {
+  return (
+    <svg
+      viewBox="0 0 160 160"
+      className="pointer-events-none absolute inset-0 z-10 h-full w-full"
+      aria-hidden
+    >
+      <g stroke="#4ade80" strokeWidth="6" fill="none" strokeLinecap="round" opacity="0.85">
+        <path d="M 22 104 q 58 -18 116 0" />
+        <path d="M 26 126 q 54 -16 108 0" />
+      </g>
+      <g fill="#22c55e" stroke="#14532d" strokeWidth="2">
+        <ellipse cx="34" cy="100" rx="8" ry="5" transform="rotate(-20 34 100)" />
+        <ellipse cx="126" cy="122" rx="8" ry="5" transform="rotate(16 126 122)" />
+      </g>
+    </svg>
   )
 }
 

@@ -1,6 +1,7 @@
 import type { GameDate } from '../lib/date'
 import type { BattleState, CosmeticLoadout, DungeonDay, TowerProgress } from './battle'
 import type { Egg, Pet } from './pet'
+import type { RoomState } from './room'
 import type { Subject } from './study'
 import type { WorkoutState } from './workout'
 import type { Task, TaskEvent } from './task'
@@ -49,6 +50,12 @@ export interface GameState {
   keyProgress: number
   /** 탑 진행 상황 */
   tower: TowerProgress
+  /** 장착한 액티브 스킬 id (최대 SKILL_SLOTS개). 전투 중에는 바꿀 수 없다. */
+  skillLoadout: string[]
+  /** 첫 클리어 보상을 이미 받은 지역 id. 보상 중복 지급을 막는 유일한 기준. */
+  regionClears: string[]
+  /** 내 방(거점)의 보유 가구와 배치 */
+  room: RoomState
   /** 진행 중이거나 방금 끝난 전투. 없으면 null */
   battle: BattleState | null
   /** 소모품 보유 수. 아이템 id -> 개수 */
@@ -73,5 +80,6 @@ export interface GameState {
  * 6: 운동 기록(workout) 추가
  * 7: 탑의 열쇠 1개 지급 (한 번만)
  * 8: 입장 제한 폐지 + 열쇠 적립(keyProgress), 100 Gold·열쇠 2개 지급 (한 번만)
+ * 9: 스킬 장착(skillLoadout), 지역 첫 클리어(regionClears), 내 방(room), 망토 칸 추가
  */
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 9

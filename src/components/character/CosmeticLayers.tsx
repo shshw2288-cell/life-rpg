@@ -194,6 +194,46 @@ export function HatLayer({ cosmetic }: { cosmetic: Cosmetic }) {
   }
 }
 
+/**
+ * 망토. 몸통보다 먼저(뒤에) 그려야 하므로 LumiAvatar에서 호출 위치가 다르다.
+ *
+ * 루미는 머리(중심 100,86 · 반지름 46)가 몸통을 y=132까지 덮는다.
+ * 그래서 망토는 목선 y=126 부터 시작해 몸통(x 57~143)보다 넓게 퍼지도록 그린다.
+ */
+export function CapeLayer({ cosmetic }: { cosmetic: Cosmetic }) {
+  const { primary, secondary } = cosmetic.style
+  const outline = secondary ?? '#0f172a'
+
+  return (
+    <g>
+      {/* 망토 본체 — 몸통 밖으로 확실히 퍼지게 */}
+      <path
+        d="M 64 126 Q 100 114 136 126 L 166 180 Q 133 193 100 186 Q 67 193 34 180 Z"
+        fill={primary}
+        stroke={outline}
+        strokeWidth="3.5"
+        strokeLinejoin="round"
+      />
+      {/* 안감 그늘 (오른쪽이 그늘) */}
+      <path d="M 100 118 L 136 126 L 166 180 Q 133 193 100 186 Z" fill={outline} opacity="0.28" />
+      {/* 펄럭이는 주름 */}
+      <g stroke={outline} strokeWidth="2.6" fill="none" opacity="0.65">
+        <path d="M 78 130 q -10 28 -26 48" />
+        <path d="M 122 130 q 10 28 26 48" />
+        <path d="M 100 122 q 0 34 0 62" />
+      </g>
+      {/* 어깨 깃 — 머리 옆으로 살짝 보인다 */}
+      <path
+        d="M 64 126 q 36 -14 72 0 q -12 12 -36 12 q -24 0 -36 -12 Z"
+        fill={primary}
+        stroke={outline}
+        strokeWidth="3"
+        strokeLinejoin="round"
+      />
+    </g>
+  )
+}
+
 export function FaceLayer({ cosmetic }: { cosmetic: Cosmetic }) {
   const { primary } = cosmetic.style
 
@@ -239,5 +279,6 @@ export function useCosmetics(loadout: CosmeticLoadout) {
     hat: loadout.hat ? findCosmetic(loadout.hat) : undefined,
     face: loadout.face ? findCosmetic(loadout.face) : undefined,
     aura: loadout.aura ? findCosmetic(loadout.aura) : undefined,
+    cape: loadout.cape ? findCosmetic(loadout.cape) : undefined,
   }
 }

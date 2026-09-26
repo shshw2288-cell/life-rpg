@@ -1,8 +1,12 @@
+import type { StatusId } from '../types/battle'
+
 /**
  * 던전 전투 밸런스. 조정할 수치는 전부 여기 모은다.
  *
  * 주의: 전투 HP/MP는 생산성 앱의 캐릭터 HP와 완전히 분리된 값이다.
  * 전투에서 져도 character.hp 는 건드리지 않는다.
+ *
+ * 스킬 수치는 data/skillConfig.ts, 보스 패턴은 data/towerConfig.ts 에 있다.
  */
 
 /** 레벨에서 전투 능력치를 만드는 계수 */
@@ -20,6 +24,7 @@ export const COMBAT_SCALING = {
   critMultiplier: 1.6,
 }
 
+/** 슬롯을 쓰지 않고 언제나 할 수 있는 두 가지 행동 */
 export const ACTIONS = {
   attack: {
     /** 피해 난수 범위 */
@@ -33,20 +38,57 @@ export const ACTIONS = {
     damageTaken: 0.4,
     mpGain: 4,
   },
-  skill: {
-    id: 'starlight',
-    name: '별빛 파동',
-    mpCost: 6,
-    /** 공격력 배율 */
-    power: 1.8,
-    /** 몬스터 방어력을 이만큼만 적용 */
-    defensePierce: 0.5,
-  },
 }
 
-/** 몬스터가 몇 턴마다 강공격을 하는지 */
+/** 일반 몬스터가 강공격을 예고하는 기본 간격과 배율 */
 export const MONSTER_HEAVY_TURN_INTERVAL = 3
 export const MONSTER_HEAVY_MULTIPLIER = 1.7
+
+/** 지역 특징으로 일반 몬스터가 거는 중독 */
+export const AMBIENT_POISON = { turns: 2, value: 0.04 }
+
+/** 화면에 상태를 보여줄 때 쓰는 표시 정보 */
+export const STATUS_INFO: Record<
+  StatusId,
+  { label: string; side: 'player' | 'monster'; tone: 'good' | 'bad'; describe: (value: number) => string }
+> = {
+  shield: {
+    label: '보호막',
+    side: 'player',
+    tone: 'good',
+    describe: (value) => `받는 피해 ${Math.round(value * 100)}% 감소`,
+  },
+  focus: {
+    label: '집중',
+    side: 'player',
+    tone: 'good',
+    describe: (value) => `다음 공격 피해 +${Math.round(value * 100)}% (쓰면 사라짐)`,
+  },
+  poison: {
+    label: '중독',
+    side: 'player',
+    tone: 'bad',
+    describe: (value) => `라운드마다 최대 HP의 ${Math.round(value * 100)}% 피해`,
+  },
+  weaken: {
+    label: '묶임',
+    side: 'monster',
+    tone: 'good',
+    describe: (value) => `적의 공격 ${Math.round(value * 100)}% 약화 · 회복 저지`,
+  },
+  vulnerable: {
+    label: '약점 노출',
+    side: 'monster',
+    tone: 'good',
+    describe: (value) => `적이 받는 피해 +${Math.round(value * 100)}%`,
+  },
+  guard: {
+    label: '보호막(적)',
+    side: 'monster',
+    tone: 'bad',
+    describe: (value) => `적이 받는 피해 ${Math.round(value * 100)}% 감소`,
+  },
+}
 
 /** 처음 시작할 때 주는 탑의 열쇠 (하루 제한과 별개로 쓰는 추가 입장권) */
 export const STARTING_TOWER_KEYS = 1

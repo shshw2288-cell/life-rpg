@@ -4,7 +4,10 @@ import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { findCosmetic, findItem } from '../data/shopConfig'
 import { MAX_WEIGHT, WEIGHT_STEP } from '../data/workoutConfig'
 import { STARTING_TOWER_KEYS } from '../data/battleConfig'
+import { STARTER_FURNITURE } from '../data/roomConfig'
+import { SKILL_SLOTS } from '../data/skillConfig'
 import { useBattleAnimStore } from '../features/dungeon/battleAnimStore'
+import { defaultLoadout, unlockedSkillIds } from '../engine/skills'
 import { addDays, getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
@@ -135,6 +138,8 @@ describe('던전', () => {
       const battle = useGameStore.getState().battle
       if (!battle || battle.status !== 'active') return
       useGameStore.getState().battleAction('attack')
+      // 화면이 없는 테스트에서는 연출이 끝난 것으로 친다
+      useBattleAnimStore.getState().reset()
     }
   }
 
@@ -676,7 +681,7 @@ describe('탑과 상점', () => {
 
     // 연출 중 연타
     useGameStore.getState().battleAction('attack')
-    useGameStore.getState().battleAction('skill')
+    useGameStore.getState().battleAction({ kind: 'skill', skillId: 'starlight_arrow' })
     expect(useGameStore.getState().battle!.turn).toBe(afterFirst.turn)
     expect(useGameStore.getState().battle!.monster.hp).toBe(afterFirst.monster.hp)
 
@@ -830,6 +835,178 @@ describe('펫 뽑기와 동행 효과', () => {
     useGameStore.getState().enterDungeon()
 
     expect(useGameStore.getState().battle!.player.maxHp).toBeGreaterThan(plainHp)
+  })
+})
+
+describe('스킬 장착', () => {
+  it('기본 구성으로 시작한다', () => {
+    expect(useGameStore.getState().skillLoadout).toEqual(defaultLoadout())
+  })
+
+  it('해제하고 다시 장착할 수 있다', () => {
+    useGameStore.getState().toggleSkill('sprout_heal')
+    expect(useGameStore.getState().skillLoadout).not.toContain('sprout_heal')
+    useGameStore.getState().toggleSkill('sprout_heal')
+    expect(useGameStore.getState().skillLoadout).toContain('sprout_heal')
+  })
+
+  it('슬롯이 가득 차면 더 넣을 수 없다', () => {
+    useGameStore.setState({ tower: { highestCleared: 20, lastFloor: 20 } })
+    expect(useGameStore.getState().skillLoadout).toHaveLength(SKILL_SLOTS)
+    useGameStore.getState().toggleSkill('vine_bind')
+    expect(useGameStore.getState().skillLoadout).not.toContain('vine_bind')
+
+    // 하나 비우면 들어간다
+    useGameStore.getState().toggleSkill('light_shield')
+    useGameStore.getState().toggleSkill('vine_bind')
+    expect(useGameStore.getState().skillLoadout).toContain('vine_bind')
+    expect(useGameStore.getState().skillLoadout).toHaveLength(SKILL_SLOTS)
+  })
+
+  it('해금되지 않은 스킬은 장착되지 않는다', () => {
+    useGameStore.getState().toggleSkill('focus_mind')
+    expect(useGameStore.getState().skillLoadout).not.toContain('focus_mind')
+  })
+
+  it('전투 중에는 구성을 바꿀 수 없다', () => {
+    useGameStore.getState().enterDungeon(1)
+    const before = useGameStore.getState().skillLoadout
+    useGameStore.getState().toggleSkill('sprout_heal')
+    expect(useGameStore.getState().skillLoadout).toEqual(before)
+  })
+
+  it('전투에는 장착한 스킬만 들어간다', () => {
+    useGameStore.getState().toggleSkill('light_shield')
+    useGameStore.getState().enterDungeon(1)
+    const battle = useGameStore.getState().battle!
+    expect(battle.skills.map((slot) => slot.id)).toEqual(
+      useGameStore.getState().skillLoadout,
+    )
+  })
+})
+
+describe('지역 첫 클리어 보상', () => {
+  function clearFloor(floor: number) {
+    useGameStore.setState({
+      character: { ...useGameStore.getState().character, level: 90 },
+      towerKeys: 5,
+      battle: null,
+      tower: { highestCleared: floor - 1, lastFloor: floor - 1 },
+    })
+    useGameStore.getState().enterDungeon(floor)
+    for (let i = 0; i < 200; i += 1) {
+      const battle = useGameStore.getState().battle
+      if (!battle || battle.status !== 'active') break
+      useGameStore.getState().battleAction('attack')
+      useBattleAnimStore.getState().reset()
+    }
+  }
+
+  it('지역 보스를 처음 잡으면 대표 보상을 한 번만 준다', () => {
+    clearFloor(10)
+    expect(useGameStore.getState().battle?.status).toBe('won')
+    expect(useGameStore.getState().regionClears).toContain('forest')
+    expect(useGameStore.getState().room.owned).toContain('sprout_pot')
+
+    // 같은 보스를 다시 잡아도 지역 보상은 늘지 않는다
+    useGameStore.getState().leaveBattle()
+    clearFloor(10)
+    expect(useGameStore.getState().regionClears.filter((id) => id === 'forest')).toHaveLength(1)
+    expect(
+      useGameStore.getState().room.owned.filter((id) => id === 'sprout_pot'),
+    ).toHaveLength(1)
+  })
+
+  it('버섯 동굴 보상은 확정 펫이다 (뽑기 없이)', () => {
+    clearFloor(20)
+    expect(useGameStore.getState().pets.some((pet) => pet.speciesId === 'spore_cap')).toBe(true)
+  })
+
+  it('바람 절벽 보상은 망토다', () => {
+    clearFloor(30)
+    expect(useGameStore.getState().ownedCosmetics).toContain('wind_cloak')
+    expect(useGameStore.getState().cosmetics.cape).toBe('wind_cloak')
+  })
+
+  it('보스를 깨면 새 스킬이 열린다', () => {
+    expect(unlockedSkillIds(useGameStore.getState().tower.highestCleared)).not.toContain(
+      'vine_bind',
+    )
+    clearFloor(10)
+    expect(unlockedSkillIds(useGameStore.getState().tower.highestCleared)).toContain('vine_bind')
+  })
+})
+
+describe('내 방', () => {
+  it('처음부터 기본 가구와 배치가 있다', () => {
+    const room = useGameStore.getState().room
+    expect(room.owned).toEqual(STARTER_FURNITURE)
+    expect(room.placements.length).toBeGreaterThan(0)
+  })
+
+  it('가구를 옮기면 자리만 바뀐다', () => {
+    useGameStore.getState().placeFurniture('plant_small', 2, 2)
+    const placements = useGameStore.getState().room.placements
+    expect(placements.filter((item) => item.furnitureId === 'plant_small')).toHaveLength(1)
+    expect(placements.find((item) => item.furnitureId === 'plant_small')).toMatchObject({
+      x: 2,
+      y: 2,
+    })
+  })
+
+  it('규칙에 어긋난 자리에는 놓이지 않는다', () => {
+    const before = useGameStore.getState().room.placements
+    useGameStore.getState().placeFurniture('desk', 0, 0) // 바닥 가구를 벽에
+    expect(useGameStore.getState().room.placements).toEqual(before)
+  })
+
+  it('가지고 있지 않은 가구는 놓을 수 없다', () => {
+    const before = useGameStore.getState().room.placements
+    useGameStore.getState().placeFurniture('trophy_forest', 2, 3)
+    expect(useGameStore.getState().room.placements).toEqual(before)
+  })
+
+  it('회수해도 보유 목록은 그대로다', () => {
+    useGameStore.getState().pickUpFurniture('plant_small')
+    expect(
+      useGameStore.getState().room.placements.some((item) => item.furnitureId === 'plant_small'),
+    ).toBe(false)
+    expect(useGameStore.getState().room.owned).toContain('plant_small')
+  })
+
+  it('배치를 초기화해도 보유 가구는 사라지지 않는다', () => {
+    useGameStore.getState().pickUpFurniture('bed')
+    useGameStore.getState().pickUpFurniture('desk')
+    const owned = useGameStore.getState().room.owned
+    useGameStore.getState().resetRoom()
+    expect(useGameStore.getState().room.owned).toEqual(owned)
+    expect(useGameStore.getState().room.placements.length).toBeGreaterThan(0)
+  })
+
+  it('기록 조건을 채우면 가구를 주고, 다시 불러도 중복 지급하지 않는다', () => {
+    useGameStore.getState().addSubject({ name: '수학', difficulty: 3, color: '#fff' })
+    const subject = useGameStore.getState().subjects[0]
+    for (let i = 0; i < 10; i += 1) useGameStore.getState().addRound(subject.id)
+
+    useGameStore.getState().syncRoomUnlocks()
+    const owned = useGameStore.getState().room.owned
+    expect(owned).toContain('bookshelf')
+
+    useGameStore.getState().syncRoomUnlocks()
+    expect(useGameStore.getState().room.owned).toEqual(owned)
+  })
+
+  it('기록이 없으면 가구를 주지 않는다 (과거 활동 추정 금지)', () => {
+    useGameStore.getState().syncRoomUnlocks()
+    expect(useGameStore.getState().room.owned).toEqual(STARTER_FURNITURE)
+  })
+
+  it('백업에 스킬·지역·방 정보가 들어간다', () => {
+    useGameStore.getState().placeFurniture('plant_small', 5, 3)
+    const save = useGameStore.getState().exportSave()
+    expect(save.skillLoadout).toEqual(useGameStore.getState().skillLoadout)
+    expect(save.regionClears).toEqual(useGameStore.getState().regionClears)
+    expect(save.room.placements).toContainEqual({ furnitureId: 'plant_small', x: 5, y: 3 })
   })
 })
 
