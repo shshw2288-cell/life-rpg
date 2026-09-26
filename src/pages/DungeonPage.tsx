@@ -9,6 +9,7 @@ import { countCompletionsOn, entryStatus } from '../engine/dungeon'
 import { petBonuses } from '../engine/pets'
 import { isBossFloor, monsterForFloor, nextBossFloor } from '../engine/tower'
 import { BattleView } from '../features/dungeon/BattleView'
+import { ForestRuinsBackdrop } from '../features/dungeon/ForestRuinsBackdrop'
 import { MonsterSprite } from '../features/dungeon/MonsterSprite'
 import { getGameDate } from '../lib/date'
 import { useGameStore } from '../store/useGameStore'
@@ -241,13 +242,20 @@ function FloorPreview({
   const boss = monster.isBoss
 
   return (
-    <div className="flex flex-col items-center gap-3 py-2">
-      {boss && (
-        <span className="rounded-full bg-ember-500/20 px-3 py-1 text-xs font-bold text-ember-400">
-          보스 층
-        </span>
-      )}
-      <MonsterSprite monster={monster} size={boss ? 190 : 160} />
+    <div className="flex flex-col items-center gap-3">
+      {/* 입구도 전투와 같은 숲속 유적 배경을 쓴다 */}
+      <div className="relative w-full overflow-hidden rounded-xl border border-abyss-700">
+        <ForestRuinsBackdrop dim />
+        <div className="relative flex h-44 items-end justify-center pb-4">
+          <MonsterSprite monster={monster} size={boss ? 170 : 140} shadow />
+        </div>
+        {boss && (
+          <span className="absolute left-3 top-3 rounded-lg bg-rose-600/85 px-2.5 py-1 text-xs font-bold text-white">
+            보스 층
+          </span>
+        )}
+      </div>
+
       <p className="text-base font-bold text-slate-100">{monster.name}</p>
       <p className="text-center text-sm text-slate-400">{monster.description}</p>
 

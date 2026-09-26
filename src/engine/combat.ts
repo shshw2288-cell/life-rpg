@@ -8,6 +8,7 @@ import type { BossMove } from '../data/towerConfig'
 import type {
   BattleLogEntry,
   BattleState,
+  BattleStep,
   CombatStats,
   PlayerAction,
 } from '../types/battle'
@@ -113,8 +114,10 @@ function decideMonsterMove(state: BattleState): BossMove {
 
 export interface TurnResult {
   battle: BattleState
-  /** 이번 턴에 추가된 로그만 따로 준다. 애니메이션에 쓸 수 있다. */
+  /** 이번 턴에 추가된 로그만 따로 준다. */
   added: BattleLogEntry[]
+  /** 연출을 재생하기 위한 구조화된 단계. 저장하지 않는다. */
+  steps: BattleStep[]
 }
 
 /** 몬스터 차례를 처리한다. 플레이어 행동 뒤에 호출한다. */
@@ -122,14 +125,16 @@ function monsterTurn(
   state: BattleState,
   turn: number,
   rng: Rng,
-): { next: BattleState; added: BattleLogEntry[] } {
+): { next: BattleState; added: BattleLogEntry[]; steps: BattleStep[] } {
   const added: BattleLogEntry[] = []
+  const steps: BattleStep[] = []
   const move = decideMonsterMove(state)
   const name = state.monsterDef.name
   let next = state
 
   if (move === 'charge') {
     added.push({ turn, side: 'monster', text: `${name}이(가) 기운을 모으고 있다...` })
+    steps.push({ kind: 'monster_charge' })
     next = { ...next, monsterCharging: true }
   } else if (move === 'heal') {
     const amount = Math.round(next.monster.maxHp * (next.monsterDef.healRatio ?? 0.08))
@@ -138,6 +143,7 @@ function monsterTurn(
       monster: { ...next.monster, hp: Math.min(next.monster.maxHp, next.monster.hp + amount) },
     }
     added.push({ turn, side: 'monster', text: `${name}이(가) 체력을 ${amount} 회복했다` })
+    steps.push({ kind: 'monster_heal', amount })
   } else {
     const heavy = move === 'heavy'
     const damage = monsterDamage(next, heavy, rng)
@@ -152,6 +158,7 @@ function monsterTurn(
       text: heavy ? `${name}의 강타! (${damage})` : `${name}의 공격 (${damage})`,
       damage,
     })
+    steps.push(heavy ? { kind: 'monster_heavy', damage } : { kind: 'monster_attack', damage })
   }
 
   // 보스는 패턴을 한 칸 진행한다
@@ -159,7 +166,7 @@ function monsterTurn(
     next = { ...next, patternIndex: next.patternIndex + 1 }
   }
 
-  return { next, added }
+  return { next, added, steps }
 }
 
 /** 플레이어가 쓰러졌을 때 부활의 부적을 쓸 수 있으면 살린다 */
@@ -183,6 +190,7 @@ function finishIfDead(
   state: BattleState,
   turn: number,
   added: BattleLogEntry[],
+  steps: BattleStep[],
 ): TurnResult | null {
   if (state.player.hp > 0) return null
   const entry: BattleLogEntry = {
@@ -193,6 +201,7 @@ function finishIfDead(
   return {
     battle: { ...state, status: 'lost', log: [...state.log, ...added, entry] },
     added: [...added, entry],
+    steps: [...steps, { kind: 'lose' }],
   }
 }
 
@@ -211,12 +220,13 @@ export function takeTurn(
   rng: Rng,
   options: TurnOptions = {},
 ): TurnResult {
-  if (state.status !== 'active') return { battle: state, added: [] }
+  if (state.status !== 'active') return { battle: state, added: [], steps: [] }
   if (action === 'skill' && state.player.mp < ACTIONS.skill.mpCost) {
-    return { battle: state, added: [] }
+    return { battle: state, added: [], steps: [] }
   }
 
   const added: BattleLogEntry[] = []
+  const steps: BattleStep[] = []
   const turn = state.turn
   let next: BattleState = { ...state, defending: false }
 
@@ -238,6 +248,7 @@ export function takeTurn(
       damage,
       crit,
     })
+    steps.push({ kind: 'player_attack', damage, crit })
   } else if (action === 'defend') {
     next = {
       ...next,
@@ -248,6 +259,7 @@ export function takeTurn(
       },
     }
     added.push({ turn, side: 'player', text: `루미가 몸을 웅크렸다 (MP +${ACTIONS.defend.mpGain})` })
+    steps.push({ kind: 'player_defend' })
   } else {
     const { damage, crit } = skillDamage(next, rng)
     next = {
@@ -262,9 +274,10 @@ export function takeTurn(
       damage,
       crit,
     })
+    steps.push({ kind: 'player_skill', damage, crit })
   }
 
-  return resolveAfterPlayerAction(next, turn, added, rng, options)
+  return resolveAfterPlayerAction(next, turn, added, steps, rng, options)
 }
 
 /**
@@ -276,10 +289,11 @@ export function useItemTurn(
   rng: Rng,
   options: TurnOptions = {},
 ): TurnResult {
-  if (state.status !== 'active') return { battle: state, added: [] }
+  if (state.status !== 'active') return { battle: state, added: [], steps: [] }
 
   const turn = state.turn
   const added: BattleLogEntry[] = []
+  const steps: BattleStep[] = []
   let next: BattleState = { ...state, defending: false }
 
   if (effect.kind === 'heal') {
@@ -287,14 +301,16 @@ export function useItemTurn(
     const healed = Math.min(next.player.maxHp, next.player.hp + amount) - next.player.hp
     next = { ...next, player: { ...next.player, hp: next.player.hp + healed } }
     added.push({ turn, side: 'player', text: `${effect.name} 사용 — HP +${healed}` })
+    steps.push({ kind: 'player_item', heal: healed, name: effect.name })
   } else {
     const amount = Math.round(next.player.maxMp * effect.ratio)
     const restored = Math.min(next.player.maxMp, next.player.mp + amount) - next.player.mp
     next = { ...next, player: { ...next.player, mp: next.player.mp + restored } }
     added.push({ turn, side: 'player', text: `${effect.name} 사용 — MP +${restored}` })
+    steps.push({ kind: 'player_item', mana: restored, name: effect.name })
   }
 
-  return resolveAfterPlayerAction(next, turn, added, rng, options)
+  return resolveAfterPlayerAction(next, turn, added, steps, rng, options)
 }
 
 /** 플레이어 행동 이후의 공통 처리: 몬스터 사망 확인 → 반격 → 플레이어 사망 확인 */
@@ -302,6 +318,7 @@ function resolveAfterPlayerAction(
   state: BattleState,
   turn: number,
   added: BattleLogEntry[],
+  steps: BattleStep[],
   rng: Rng,
   options: TurnOptions,
 ): TurnResult {
@@ -316,18 +333,21 @@ function resolveAfterPlayerAction(
     return {
       battle: { ...next, status: 'won', log: [...next.log, ...added, entry] },
       added: [...added, entry],
+      steps: [...steps, { kind: 'win' }],
     }
   }
 
   const monsterResult = monsterTurn(next, turn, rng)
   next = monsterResult.next
   added.push(...monsterResult.added)
+  steps.push(...monsterResult.steps)
 
   const revive = tryRevive(next, turn, options.reviveRatio ?? null)
   next = revive.next
   added.push(...revive.added)
+  if (revive.used) steps.push({ kind: 'revive', hp: next.player.hp })
 
-  const dead = finishIfDead(next, turn, added)
+  const dead = finishIfDead(next, turn, added, steps)
   if (dead) return dead
 
   // 다음 턴 준비. 일반 몬스터는 일정 턴마다 강타를 예고한다.
@@ -347,6 +367,7 @@ function resolveAfterPlayerAction(
   return {
     battle: { ...next, turn: nextTurn, monsterCharging: charging, log: [...next.log, ...added] },
     added,
+    steps,
   }
 }
 

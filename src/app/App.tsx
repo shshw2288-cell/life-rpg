@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { FeedbackToasts } from '../components/feedback/FeedbackToasts'
 import { EffectLayer } from '../features/effects/EffectLayer'
-import { Sidebar } from '../components/layout/Sidebar'
+import { MobileNav, Sidebar } from '../components/layout/Sidebar'
 import { TopBar } from '../components/layout/TopBar'
 import { CharacterPage } from '../pages/CharacterPage'
 import { DashboardPage } from '../pages/DashboardPage'
@@ -39,7 +39,7 @@ export default function App() {
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopBar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/tasks" element={<TasksPage />} />
@@ -55,6 +55,7 @@ export default function App() {
             </Routes>
           </main>
         </div>
+        <MobileNav />
         <FeedbackToasts />
         <EffectLayer />
       </div>

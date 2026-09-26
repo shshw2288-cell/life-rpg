@@ -24,7 +24,7 @@ export function StatBar({ label, current, max, tone }: StatBarProps) {
         aria-valuemin={0}
         aria-valuemax={max}
         aria-valuetext={`${current} / ${max}`}
-        className="h-2.5 w-32 overflow-hidden rounded-full bg-abyss-700"
+        className="h-2.5 w-20 overflow-hidden rounded-full bg-abyss-700 sm:w-32"
       >
         <div
           className={`h-full rounded-full transition-[width] duration-500 ${TONE_CLASS[tone]}`}

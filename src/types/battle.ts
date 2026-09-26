@@ -22,6 +22,23 @@ export interface BattleLogEntry {
   crit?: boolean
 }
 
+/**
+ * 연출용 단계. 전투 계산 결과를 순서대로 재생하기 위한 것이며 저장하지 않는다.
+ * 로그 문장을 해석하지 않고 이 구조를 써서 애니메이션을 결정한다.
+ */
+export type BattleStep =
+  | { kind: 'player_attack'; damage: number; crit: boolean }
+  | { kind: 'player_skill'; damage: number; crit: boolean }
+  | { kind: 'player_defend' }
+  | { kind: 'player_item'; heal?: number; mana?: number; name: string }
+  | { kind: 'monster_attack'; damage: number }
+  | { kind: 'monster_heavy'; damage: number }
+  | { kind: 'monster_charge' }
+  | { kind: 'monster_heal'; amount: number }
+  | { kind: 'revive'; hp: number }
+  | { kind: 'win' }
+  | { kind: 'lose' }
+
 export interface BattleRewards {
   gold: number
   materials: Record<string, number>

@@ -19,6 +19,7 @@ import { drawPets, petBonuses, progressPets, type DrawResult } from '../engine/p
 import { completionReward, negativeHabitPenalty, positiveHabitReward } from '../engine/rewards'
 import { planSettlement } from '../engine/schedule'
 import { staleCompletedTodos } from '../engine/tasks'
+import { useBattleAnimStore } from '../features/dungeon/battleAnimStore'
 import { countRoundsOn, justReachedTarget, roundReward } from '../engine/study'
 import { migrateSave } from '../services/migrations'
 import { STUDY } from '../data/studyConfig'
@@ -476,6 +477,9 @@ export const useGameStore = create<GameStore>()(
         const useKey = status.remaining <= 0
         if (useKey && state.towerKeys <= 0) return
 
+        // 새 전투를 시작하기 전에 이전 연출을 정리한다
+        useBattleAnimStore.getState().reset()
+
         const monster = monsterForFloor(target)
         // 동행 펫의 전투 효과를 능력치에 더한다
         const stats = deriveCombatStats(state.character.level, petBonuses(state.activePetId).combat)
@@ -493,6 +497,8 @@ export const useGameStore = create<GameStore>()(
         const state = get()
         const battle = state.battle
         if (!battle || battle.status !== 'active') return
+        // 연출이 재생되는 동안 들어온 입력은 무시한다 (같은 공격이 두 번 실행되지 않게)
+        if (useBattleAnimStore.getState().isBlocking()) return
 
         const result = takeTurn(battle, action, Math.random, {
           reviveRatio: reviveRatioOf(state.inventory),
@@ -500,12 +506,14 @@ export const useGameStore = create<GameStore>()(
         if (result.battle === battle) return // MP 부족 등으로 아무 일도 일어나지 않음
 
         set(resolveBattleResult(state, result.battle))
+        useBattleAnimStore.getState().enqueue(battle.id, result.steps)
       },
 
       useBattleItem: (itemId) => {
         const state = get()
         const battle = state.battle
         if (!battle || battle.status !== 'active') return
+        if (useBattleAnimStore.getState().isBlocking()) return
 
         const item = findItem(itemId)
         if (!item || !item.usableInBattle) return
@@ -521,6 +529,7 @@ export const useGameStore = create<GameStore>()(
 
         const spent = { ...state.inventory, [itemId]: state.inventory[itemId] - 1 }
         set({ ...resolveBattleResult({ ...state, inventory: spent }, result.battle), inventory: spent })
+        useBattleAnimStore.getState().enqueue(battle.id, result.steps)
       },
 
       buyShopItem: (itemId, count = 1) => {
@@ -591,7 +600,11 @@ export const useGameStore = create<GameStore>()(
         set({ cosmetics: { ...state.cosmetics, [slot]: cosmeticId } })
       },
 
-      leaveBattle: () => set({ battle: null }),
+      leaveBattle: () => {
+        // 화면을 나가면 남은 연출도 버린다
+        useBattleAnimStore.getState().reset()
+        set({ battle: null })
+      },
 
       drawPet: (count) => {
         const state = get()

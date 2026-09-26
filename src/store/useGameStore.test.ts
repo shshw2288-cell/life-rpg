@@ -3,6 +3,7 @@ import { DIFFICULTY_TABLE } from '../data/gameConfig'
 import { GACHA, PET_SPECIES } from '../data/petConfig'
 import { findCosmetic, findItem } from '../data/shopConfig'
 import { MAX_WEIGHT, WEIGHT_STEP } from '../data/workoutConfig'
+import { useBattleAnimStore } from '../features/dungeon/battleAnimStore'
 import { addDays, getGameDate } from '../lib/date'
 
 // persist 미들웨어는 window.localStorage를 쓴다. node 환경이라 둘 다 대체한다.
@@ -22,6 +23,7 @@ const today = getGameDate(new Date())
 beforeEach(() => {
   memory.clear()
   useGameStore.getState().resetAll()
+  useBattleAnimStore.getState().reset()
 })
 
 describe('과제 등록과 완료', () => {
@@ -513,6 +515,8 @@ describe('탑과 상점', () => {
       const battle = useGameStore.getState().battle
       if (!battle || battle.status !== 'active') return
       useGameStore.getState().battleAction('attack')
+      // 화면이 없는 테스트에서는 연출이 끝난 것으로 친다
+      useBattleAnimStore.getState().reset()
     }
   }
 
@@ -601,6 +605,48 @@ describe('탑과 상점', () => {
     useGameStore.getState().useBattleItem('large_potion')
     expect(useGameStore.getState().battle!.player.hp).toBeGreaterThan(5)
     expect(useGameStore.getState().inventory.large_potion).toBe(0)
+  })
+
+  it('연출이 재생되는 동안 들어온 입력은 무시한다', () => {
+    // 한 방에 끝나지 않도록 낮은 레벨로 도전한다
+    useGameStore.getState().enterDungeon(1)
+    useGameStore.getState().battleAction('attack')
+
+    const afterFirst = useGameStore.getState().battle!
+    expect(useBattleAnimStore.getState().playing).toBe(true)
+
+    // 연출 중 연타
+    useGameStore.getState().battleAction('attack')
+    useGameStore.getState().battleAction('skill')
+    expect(useGameStore.getState().battle!.turn).toBe(afterFirst.turn)
+    expect(useGameStore.getState().battle!.monster.hp).toBe(afterFirst.monster.hp)
+
+    // 연출이 끝나면 다시 받는다
+    useBattleAnimStore.getState().reset()
+    useGameStore.getState().battleAction('attack')
+    expect(useGameStore.getState().battle!.monster.hp).toBeLessThan(afterFirst.monster.hp)
+  })
+
+  it('연출 단계가 순서대로 만들어진다', () => {
+    levelUpTo(5)
+    useGameStore.getState().enterDungeon(1)
+    useGameStore.getState().battleAction('attack')
+
+    const anim = useBattleAnimStore.getState()
+    const steps = [anim.current, ...anim.queue].filter(Boolean)
+    expect(steps[0]?.kind).toBe('player_attack')
+    // 플레이어 행동 다음에는 몬스터 차례가 온다
+    expect(steps.slice(1).some((step) => step?.kind.startsWith('monster'))).toBe(true)
+  })
+
+  it('전투를 나가면 남은 연출도 정리된다', () => {
+    levelUpTo(60)
+    useGameStore.getState().enterDungeon(1)
+    useGameStore.getState().battleAction('attack')
+    useGameStore.getState().leaveBattle()
+
+    expect(useBattleAnimStore.getState().playing).toBe(false)
+    expect(useBattleAnimStore.getState().current).toBeNull()
   })
 
   it('없는 아이템은 쓸 수 없다', () => {
